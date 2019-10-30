@@ -1,0 +1,7 @@
+beautifulsoup4==4.8.1
+chromedriver-binary==77.0.3865.40.0
+selenium==3.141.0
+soupsieve==1.9.4
+urllib3==1.25.6
+
+

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head><script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script></head>
+<body>
+<form>
+ <fieldset>
+  <legend>DAYS</legend>
+     <br>
+
+  Start Day: <input id="start_day" type="text"><br>
+  End Day: <input id="end_day" type="text"><br>
+
+ </fieldset>
+</form>
+<br>
+<br>
+
+<form>
+ <fieldset>
+  <legend>ROUTES <button id="add">Add New</button></legend>
+     <br>
+    <ul id="myList">
+     <li>SYD-MEL <button id="SYD-MEL" type="button"
+            onclick="remove(event)">Remove</button></li><br>
+     <li>SYD-CAN <button id="SYD-CAN" type="button"
+            onclick="remove(event)">Remove</button></li><br>
+    </ul>
+ </fieldset>
+</form>
+<br>
+
+<button type="button" id="get_data_btn">
+      GET DATA
+  </button>
+
+<script>
+
+
+  function remove(event) {
+
+    btn_id = event.target.id;
+    var list = document.getElementsByTagName("LI");
+    for (const entry of list) {
+
+        var li_txt = entry.textContent.split(" ")[0]
+
+          if (li_txt === btn_id) {
+
+              var ulElem = document.getElementById('myList');
+
+              ulElem.removeChild(entry);
+
+
+          }
+
+
+
+    }
+
+}
+
+
+
+
+
+
+
+</script>
+
+<script>
+
+    $("#get_data_btn").click(function(e) {
+    e.preventDefault();
+
+
+    var list = document.getElementsByTagName("LI");
+
+    var  list_to_send = [];
+    for (const entry of list) {
+        console.log(entry);
+        var li_txt = entry.textContent.split(" ")[0];
+        list_to_send.push(li_txt);
+    }
+
+
+
+
+    $.ajax({
+        type: "POST",
+        url: "/start",
+        data: JSON.stringify({
+            'start_day': $("#start_day").val(), 'end_day': $("#end_day").val(),
+            'routes': list_to_send
+        }),
+        contentType: "application/json; charset=utf-8",
+        dataType: "json",
+
+
+
+
+        success: function(result) {
+            alert('ok');
+        },
+        error: function(result) {
+            alert('error');
+        }
+    });
+});
+
+
+
+
+
+$("#add").click(function(e) {
+    e.preventDefault();
+
+
+    var txt;
+  var route = prompt("Please enter route", "");
+  if (route == null || route == "") {
+    txt = "User cancelled the prompt.";
+  } else {
+    txt = route;
+  }
+
+  var existing_list = document.getElementById("myList").innerHTML;
+
+  document.getElementById("myList").innerHTML = existing_list + '<li>'+ route +' <button id="'+route+'" type="button" onclick="remove(event)">Remove</button></li><br>';
+
+
+
+
+
+
+
+
+
+
+
+
+});
+
+
+
+
+</script>
+
+
+</body>
+</html>
