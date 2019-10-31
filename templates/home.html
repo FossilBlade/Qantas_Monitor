@@ -100,10 +100,10 @@
 
         success: function(result) {
             //alert('ok');
-            $("#get_data_btn").text = "ok"
+            $("body").append("<p>"+result.statusCode+"</p>");
         },
         error: function(result) {
-            alert('error');
+            $("body").append("<p>"+result.statusCode+"</p>");
         }
     });
 });

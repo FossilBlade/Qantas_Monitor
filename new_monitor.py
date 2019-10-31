@@ -139,17 +139,6 @@ class QantusScrapper:
 
         options.add_experimental_option("prefs", prefs)
 
-
-
-
-
-
-
-
-
-
-
-
         if self.headless:
             options.headless = True
             # options.add_argument('--headless')
@@ -168,55 +157,64 @@ class QantusScrapper:
         # driver.set_window_size(size.get('width')/4, size.get('height'))
         # driver.set_window_position(2000, 0)
 
+    def page_has_loaded(self):
+        # self.log.info("Checking if {} page is loaded.".format(self.driver.current_url))
+        page_state = self.driver.execute_script('return document.readyState;')
+        return page_state == 'complete'
+
+    def wait_for_ajax(self):
+        wait = WebDriverWait(self.driver, 15)
+        try:
+            wait.until(lambda driver: driver.execute_script('return jQuery.active') == 0)
+            wait.until(lambda driver: driver.execute_script('return document.readyState') == 'complete')
+        except Exception as e:
+            pass
+
+    def __process_displayed_months(self,day,mon_name,year):
+        tables = self.driver.find_elements_by_xpath(
+            '//div[@class="date-picker__calendar-container"]//table[@class="date-picker__calendar-table"]')
+        displayed_mon_nos = []
+        for table in tables:
+            input_mon_year = "{} {}".format(mon_name, year)
+            display_st = table.text.strip()
+            if input_mon_year in display_st:
+
+                display_day = table.find_element_by_xpath(
+                    './/span[@class="date-picker__calendar-weekdays-items-text" and text()="{}"]'.format(day))
+                display_day.click()
+                # driver.execute_script("arguments[0].click();", display_day)
+                return []
+            else:
+                dis_mon_ame = display_st[0].upper() + display_st[1:3].lower()
+                dis_month_number = datetime.datetime.strptime(dis_mon_ame, '%b').month
+
+                displayed_mon_nos.append(dis_month_number)
+
+        return displayed_mon_nos
+
     def __click_on_date(self):
 
         day = int(self.date.split("-")[0])
-        mon = datetime.date(1900, int(self.date.split("-")[1]), 1).strftime('%B').upper()
+        mon_no = self.date.split("-")[1]
+        mon_name = datetime.date(1900, int(mon_no), 1).strftime('%B').upper()
         year = int(self.date.split("-")[2])
 
         date_picker = self.driver.find_element_by_xpath('//*[@id="datepicker-input-departureDate"]')
         date_picker.click()
         sleep(.2)
 
-        tables = self.driver.find_elements_by_xpath(
-            '//div[@class="date-picker__calendar-container"]//table[@class="date-picker__calendar-table"]')
+        displayed_mon_nos = self.__process_displayed_months(day,mon_name,year)
 
-        correct_mon_found = False
-        for table in tables:
+        if len(displayed_mon_nos)==2:
+            while len(displayed_mon_nos)!=0:
+                self.driver.find_element_by_css_selector(
+                    '.date-picker__arrow.date-picker__arrow-right.qfa1-arrow-icon').click()
+                displayed_mon_nos = self.__process_displayed_months(day,mon_name, year)
 
-            input_mon_year = "{} {}".format(mon, year)
-            display_st = table.text.strip()
-            if input_mon_year in display_st:
-                correct_mon_found = True
-                display_day = table.find_element_by_xpath(
-                    './/span[@class="date-picker__calendar-weekdays-items-text" and text()="{}"]'.format(day))
-                display_day.click()
-                # driver.execute_script("arguments[0].click();", display_day)
-                break
 
-        if correct_mon_found == False:
-            print('Date {} not found. Moving to next Slot'.format(self.date))
-            self.driver.find_element_by_css_selector(
-                '.date-picker__arrow.date-picker__arrow-right.qfa1-arrow-icon').click()
 
-            tables = self.driver.find_elements_by_xpath(
-                '//div[@class="date-picker__calendar-container"]//table[@class="date-picker__calendar-table"]')
 
-            correct_mon_found = False
-            for table in tables:
 
-                input_mon_year = "{} {}".format(mon, year)
-                display_st = table.text.strip()
-                if input_mon_year in display_st:
-                    correct_mon_found = True
-                    display_day = table.find_element_by_xpath(
-                        './/span[@class="date-picker__calendar-weekdays-items-text" and text()="{}"]'.format(day))
-                    display_day.click()
-                    # driver.execute_script("arguments[0].click();", display_day)
-                    break
-
-            if correct_mon_found == False:
-                raise Exception('Date {} not found.'.format(self.date))
 
     def __click_one_way(self):
         try:
@@ -299,16 +297,27 @@ class QantusScrapper:
             # fare_class_text = fare_class.text
             fare_class.click()
 
-            # print(fare_class_text)
-
-            btn = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//button[contains(@class, 'fare-name') and contains(text(),'{}')]".format(fare_class_name))))
-
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_all_elements_located((By.TAG_NAME, 'upsell-itinerary-avail')))
+            self.wait_for_ajax()
 
 
-            # btn.click()
+
+            try:
+                self.driver.find_element_by_xpath("//h3[contains(text(),'No compatible flights')]")
+                continue
+            except:
+                pass
+
+
+            # btn = WebDriverWait(self.driver, 15).until(
+            #     EC.presence_of_element_located((By.XPATH, "//button[contains(@class, 'fare-name') and contains(text(),'{}')]".format(fare_class_name))))
+            #
+            # WebDriverWait(self.driver, 10).until(
+            #     EC.presence_of_all_elements_located((By.TAG_NAME, 'upsell-itinerary-avail')))
+
+
+            # while self.page_has_loaded() == False:
+            #     sleep(.5)
+
 
 
             body = self.driver.find_element_by_id('upsell-container-bound0')
@@ -488,11 +497,11 @@ if __name__ == '__main__':
     import time
 
 
-    routes = ['SYD-LAX'] # , 'SYD-MEL'
+    routes = ['SYD-CAN'] # , 'SYD-MEL'
 
 
 
     start_time = time.time()
-    run(routes, 10,11)
+    run(routes, 120,121)
     end_time = time.time()
     print("Time to complete: {}".format(end_time - start_time))
