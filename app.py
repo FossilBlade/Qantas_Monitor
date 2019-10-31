@@ -1,4 +1,7 @@
 from flask import Flask, render_template,request, jsonify
+import threading
+import new_monitor as scrapper
+
 app = Flask(__name__)
 @app.route('/')
 def home():
@@ -15,12 +18,18 @@ def start():
     # print( request.form)
     # print(request.json)
 
+    thread1 = threading.Thread(target=scrapper.run, args=(routes, int(start_day),int(end_day)))
+    thread1.start()
+
+
     print(start_day,end_day,routes)
+
+    # thread1.join()
 
     return jsonify(isError=False,
                    message="Success",
-                   statusCode=200,
-                   data='User will be Notified via Email'), 200
+                   statusCode=202,
+                   data='Job Accepted. User will be Notified via Email'), 202
 
 
 

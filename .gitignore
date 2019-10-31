@@ -2,3 +2,4 @@ venv/
 db/
 chrome-profile/
 .idea/
+__pycache__/

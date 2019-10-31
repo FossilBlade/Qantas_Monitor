@@ -1,6 +1,8 @@
 import concurrent.futures
-import urllib.request
+
 import multiprocessing
+
+import urllib.request
 
 URLS = ['http://www.foxnews.com/',
    'http://www.cnn.com/',
