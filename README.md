@@ -8,3 +8,10 @@
 4. this script is just a quick implmentation and requires certain enhancements to be productipon ready.
 
 5. Script will also implement multi-threading/processes to scrap the data to speed up the process. 
+
+
+
+TO_DO:
+- Job Id Screenshots
+- Logging job id, date and,route based
+- config files
