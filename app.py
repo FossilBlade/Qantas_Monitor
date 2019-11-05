@@ -6,12 +6,23 @@ import datetime
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return render_template('home.html')
+    if scrapper.is_job_running():
+
+        return render_template('job_running.html')
+    else:
+        return render_template('home.html')
 
 
 
 @app.route('/start', methods=['POST'])
 def start():
+
+    if scrapper.is_job_running():
+        return jsonify(isError=True,
+                       statusCode=210,
+                       data='Job Already Running. Please wait for it to finish.'), 200
+
+
     start_day = request.json.get('start_day')
     end_day = request.json.get('end_day')
     routes = request.json.get('routes')
@@ -29,9 +40,8 @@ def start():
 
     return jsonify(isError=False,
                    jobId=job_id,
-                   message="Success",
                    statusCode=202,
-                   data='Job Accepted. User will be Notified via Email'), 202
+                   data='Job Accepted. User will be Notified via Email'), 200
 
 
 

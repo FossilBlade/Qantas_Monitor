@@ -99,11 +99,15 @@
 
 
         success: function(result) {
-            //alert('ok');
-            $("body").append("<p>"+result.statusCode+"</p>");
+            if (result.statusCode==202){
+                $("body").html("<h2>"+result.data+"</h2><br><p>JOB ID: "+result.jobId+"</p>");
+            }
+            else {
+                $("body").html("<h2>"+result.data+"</h2>");
+            }
         },
         error: function(result) {
-            $("body").append("<p>"+result.statusCode+"</p>");
+            $("body").html("<h2>ERROR</h2><br><p>"+result.statusCode+"</p>");
         }
     });
 });

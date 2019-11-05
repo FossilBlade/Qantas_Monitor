@@ -423,6 +423,12 @@ def scrap(date, routes):
     return scrapper.results, scrapper.errors
 
 
+def is_job_running():
+    if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
+        return True
+    else:
+        return False
+
 def run(routes: list, start_day: int, end_day: int, job_id=0):
     job_id = str(job_id)
 
@@ -470,7 +476,7 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
     write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, ['route', 'date', 'exe'])
 
-    send_mail('raushan2003@gmail.com', os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
+    send_mail('raushan2003@gmail.com',job_id, os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
 
     if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
         shutil.rmtree('chrome-profile')
