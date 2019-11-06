@@ -1,4 +1,5 @@
-routes = list(set(['SYD-LAX','SYD-MEL']))
-schedule_range = {'start_day': 1, 'end_day': 1}
 
+send_email = False
+email_to_send_report = 'raushan2003@gmail.com'
 close_chrome_after_complete=False
+headless = False

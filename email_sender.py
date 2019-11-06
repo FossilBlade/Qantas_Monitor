@@ -14,7 +14,7 @@ def send_mail(receiver_email,job_id,folder_path):
     sender_email = "qantasscrapper@gmail.com"
     password = "scrapper@123"
 
-    subject = "Qantas Flight Data"
+    subject = "[Job:{}] Qantas Flight Data".format(job_id)
     body = "Please find attached the latest qantas data report for Job Id: {}".format(job_id)
 
     # Create a multipart message and set headers
@@ -30,8 +30,10 @@ def send_mail(receiver_email,job_id,folder_path):
 
     if(len(files)==0):
         body = "No Files found for Job Id: {}".format(job_id)
+        subject = "[Job:{}] Qantas Report: No Files Found".format(job_id)
+        message["Subject"] = subject
     else:
-        for f in glob.glob("{}/*.xlsx".format(folder_path)):
+        for f in files:
             # Open PDF file in binary mode
             with open(f, "rb") as attachment:
                 # Add file as application/octet-stream

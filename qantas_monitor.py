@@ -26,6 +26,12 @@ import concurrent.futures
 import multiprocessing
 
 from email_sender import send_mail
+from config import email_to_send_report, close_chrome_after_complete,headless,send_email
+
+
+import logging
+log = logging.getLogger(__name__)
+
 
 ############### DO NOT REMOVE BELOW ####################################
 import chromedriver_binary  # Adds chromedriver binary to path
@@ -89,11 +95,24 @@ class QantasScrapper:
         self.date = date
         self.__setup_driver()
 
+    def log_info(self,msg):
+        log.info('[{}/{}] - {}'.format(self.date,self.route,msg))
+
+    def log_exception(self, msg):
+        log.error('[{}/{}] - {}'.format(self.date,self.route,msg),exc_info=True)
+
+    def log_error(self, msg):
+        log.error('[{}/{}] - {}'.format(self.date, self.route, msg))
+
+    def log_debug(self,msg):
+        log.debug('[{}/{}] - {}'.format(self.date,self.route,msg))
+
     def __del__(self):
         if self.close_driver == True and self.driver:
             self.driver.quit()
 
     def __setup_driver(self):
+
 
         options = webdriver.ChromeOptions()
         options.add_argument('--profile-directory=Default')
@@ -139,27 +158,7 @@ class QantasScrapper:
             self.driver = webdriver.Chrome(options=options, desired_capabilities=None)
 
         self.driver.set_page_load_timeout(page_load_timeout)
-        # self.driver.set_window_position(2000, 0)
 
-        # # driver.maximize_window()
-        # size = driver.get_window_size()
-        # driver.set_window_size(size.get('width')/4, size.get('height'))
-        # driver.set_window_position(2000, 0)
-
-    def page_has_loaded(self):
-        # self.log.info("Checking if {} page is loaded.".format(self.driver.current_url))
-        page_state = self.driver.execute_script('return document.readyState;')
-        return page_state == 'complete'
-
-    def wait_for_ajax(self):
-        wait = WebDriverWait(self.driver, 15)
-        try:
-            wait.until(lambda driver: driver.execute_script('return jQuery.active') == 0)
-
-            wait.until(lambda driver: driver.execute_script('return document.readyState') == 'complete')
-
-        except Exception as e:
-            print_exc()
 
     def __process_displayed_months(self, day, mon_name, year):
         tables = self.driver.find_elements_by_xpath(
@@ -201,26 +200,28 @@ class QantasScrapper:
                 self.driver.find_element_by_css_selector(
                     '.date-picker__arrow.date-picker__arrow-right.qfa1-arrow-icon').click()
                 displayed_mon_nos = self.__process_displayed_months(day, mon_name, year)
+                sleep(.5)
 
     def __click_one_way(self):
+
+
         try:
             oneway = self.driver.find_element_by_xpath('//*[@id="oneway"]')
             self.driver.execute_script("arguments[0].click();", oneway)
         except:
-            self.driver.save_screenshot("screenshot1.png")
+            # self.driver.save_screenshot("screenshot1.png")
             try:
                 old_form_link = self.driver.find_element_by_xpath(
                     "//p[contains(text(),'still working through the accessibility functionality of this form')]//a")
 
-                print(old_form_link.get_attribute('href'))
-
+                self.log_debug('Different view Detected. Try to go to base view.')
                 self.driver.get(old_form_link.get_attribute('href'))
 
                 oneway = self.driver.find_element_by_xpath('//*[@id="oneway"]')
                 self.driver.execute_script("arguments[0].click();", oneway)
             except:
-                print_exc()
-                self.driver.save_screenshot("screenshot2.png")
+                self.log_exception('Error Clicking One-Way.')
+                # self.driver.save_screenshot("screenshot2.png")
                 raise
 
     def __enter_place_code(self, type):
@@ -251,15 +252,37 @@ class QantasScrapper:
             raise Exception('Incorrect Place Type')
 
     def __click_search(self):
-        sleep(.2)
-        self.driver.find_element_by_xpath('//button[text()="SEARCH FLIGHTS"]').click()
+        # sleep(2)
 
-        WebDriverWait(self.driver, 10).until(
-            EC.presence_of_all_elements_located((By.TAG_NAME, 'upsell-itinerary-avail')))
+        src_btn = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, '//button[text()="SEARCH FLIGHTS"]')))
+        self.driver.execute_script("arguments[0].scrollIntoView();", src_btn)
+        src_btn.location_once_scrolled_into_view
+        src_btn.click()
 
-        body = self.driver.find_element_by_id('upsell-container-bound0')
-        body_html = body.get_attribute("outerHTML")
-        self.all_fare_body_htmls.append(body_html)
+        # self.driver.find_element_by_xpath('//button[text()="SEARCH FLIGHTS"]').click()
+
+        try:
+            # WebDriverWait(self.driver, 10).until(
+            #     EC.presence_of_all_elements_located((By.TAG_NAME, 'upsell-itinerary-avail')))
+            # WebDriverWait(self.driver, 10).until(
+            #     EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.segment.ng-star-inserted')))
+
+            WebDriverWait(self.driver, 10).until(
+                EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
+
+
+            # e2e-flight-number
+
+
+        except:
+            self.log_info('First Fare Type not found. Trying to find other fare types.')
+        else:
+            body = self.driver.find_element_by_id('upsell-container-bound0')
+            body_html = body.get_attribute("outerHTML")
+            self.log_info('Processing Base Fare Class')
+            self.__save_data(body_html)
+            # self.all_fare_body_htmls.append(body_html)
 
         extra_fare_classes_names = []
         try:
@@ -267,23 +290,22 @@ class QantasScrapper:
             for fare_class in extra_fare_classes:
                 extra_fare_classes_names.append(fare_class.text)
         except:
-            pass
+            self.log_info('Other Fare Types not found.')
 
         for fare_class_name in extra_fare_classes_names:
             fare_class = self.driver.find_element_by_xpath(
                 '//div[@class="cabin-selector-row"]//button[contains(text(),"{}")]'.format(fare_class_name))
 
+            self.log_info('Clicking and processing fare type: {}'.format(fare_class_name))
             fare_class.click()
-            # print(fare_class_name)
+
 
             old_list = WebDriverWait(self.driver, 15).until(
                 EC.presence_of_element_located((By.XPATH,
                                                 '//div[@class="card-header" or contains(@class,"card-warning")]')))
             old_txt = old_list.text.strip()
 
-            # //div[contains(@class,"fare-list")]
 
-            # print(old_txt)
 
             while True:
 
@@ -297,100 +319,176 @@ class QantasScrapper:
 
 
             try:
+                # WebDriverWait(self.driver, 10).until(
+                #     EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.segment.ng-star-inserted')))
+
                 WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_all_elements_located((By.TAG_NAME, 'upsell-itinerary-avail')))
+                    EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
+
             except:
+                self.log_info('Itinerary Detail not found for: {}'.format(fare_class_name))
+
+            else:
+                body = self.driver.find_element_by_id('upsell-container-bound0')
+                body_html = body.get_attribute("outerHTML")
+                self.log_info('Processing HTML for {}'.format(fare_class_name))
+                self.__save_data(body_html)
+                # self.all_fare_body_htmls.append(body_html)
+
+        self.log_info('All fare type found.')
+
+    # def __save_data(self):
+    #
+    #     self.log_info('Extracting info from HTML.')
+    #     for fare_classes_html in self.all_fare_body_htmls:
+    #
+    #         soup = BeautifulSoup(fare_classes_html, "html.parser")
+    #
+    #         sumamry_rows = soup.findAll("upsell-itinerary-avail")
+    #
+    #         for row in sumamry_rows:
+    #
+    #             flight_detail = {'date': self.date, 'src': None, 'src_time': None, 'dst': None, 'dst_time': None,
+    #                              'stops': 0, 'f_no': None,
+    #
+    #                              'red_e-deal': None, 'flex': None, 'business': None, 'business_classic_reward': None,
+    #                              'economy_classic_reward': None, 'sale': None, 'saver': None,
+    #                              'premium_economy_sale': None,
+    #                              'premium_economy_flex': None, 'first_saver': None,
+    #                              'first_flex': None, 'business_saver': None, 'business_flex': None,
+    #                              'premium_economy_saver': None, 'business_sale': None,
+    #                              'premium_economy_classic_reward': None,'first_classic_reward':None}
+    #
+    #             segments = row.findAll("div", {"class": "segment ng-star-inserted"})
+    #             if len(segments)==0:
+    #                 self.log_error("Couldn't find segment: \n{}".format(row.prettify()))
+    #                 # print(row.html)
+    #                 continue
+    #
+    #             src_lable = segments[0].find("span", {"class": "textual-label"})
+    #             src = src_lable.getText().strip()
+    #             src_time_span = segments[0].find("span", {"class": "sr-only"})
+    #             src_time = src_time_span.getText().strip()
+    #
+    #             dst_lables = segments[-1].findAll("span", {"class": "textual-label"})
+    #             dst = dst_lables[-1].getText().strip()
+    #             dst_time_spans = segments[-1].findAll("span", {"class": "sr-only"})
+    #             dst_time = " ".join(dst_time_spans[-1].getText().strip().split())
+    #
+    #             flight_no_span = row.find("span", {"class": "e2e-flight-number"})
+    #             flight_no = flight_no_span.getText().strip()
+    #
+    #             fare_names = row.findAll("upsell-fare-cell")
+    #
+    #             flight_detail.update(
+    #                 {'src': src, 'dst': dst, 'src_time': src_time, 'dst_time': dst_time, 'stops': len(segments) - 1,
+    #                  'f_no': flight_no})
+    #
+    #             self.results.append(flight_detail)
+    #
+    #             for fare in fare_names:
+    #                 name = fare.find('span', {'class': 'e2e-fare-name'}).getText().strip()
+    #                 amt_span = fare.find('span', {'class': 'amount cash ng-star-inserted'})
+    #                 amt = None
+    #                 if amt_span:
+    #                     amt = amt_span.getText().strip()
+    #                 else:
+    #                     amt_span_points = fare.find('span', {
+    #                         'class': 'amount reward-fare-cell-container hidden-selected-mobile ng-star-inserted'})
+    #
+    #                     if amt_span_points:
+    #
+    #                         amt = " ".join(amt_span_points.getText().strip().split())
+    #                         if '+' in amt:
+    #                             amt = amt.replace("+", 'Points +')
+    #
+    #                 fare_final_name = name.lower().replace(" ", '_')
+    #                 if fare_final_name == 'starter':
+    #                     fare_final_name = 'red_e-deal'
+    #                 elif fare_final_name == 'max':
+    #                     fare_final_name = 'flex'
+    #
+    #                 flight_detail.update({fare_final_name: amt})
+
+    def __save_data(self,fare_classe_html):
+
+        self.log_info('Extracting info from HTML.')
+
+
+        soup = BeautifulSoup(fare_classe_html, "html.parser")
+
+        sumamry_rows = soup.findAll("upsell-itinerary-avail")
+
+        for row in sumamry_rows:
+
+            flight_detail = {'date': self.date, 'src': None, 'src_time': None, 'dst': None, 'dst_time': None,
+                             'stops': 0, 'f_no': None,
+
+                             'red_e-deal': None, 'flex': None, 'business': None, 'business_classic_reward': None,
+                             'economy_classic_reward': None, 'sale': None, 'saver': None,
+                             'premium_economy_sale': None,
+                             'premium_economy_flex': None, 'first_saver': None,
+                             'first_flex': None, 'business_saver': None, 'business_flex': None,
+                             'premium_economy_saver': None, 'business_sale': None,
+                             'premium_economy_classic_reward': None, 'first_classic_reward': None}
+
+            segments = row.findAll("div", {"class": "segment ng-star-inserted"})
+            if len(segments) == 0:
+                self.log_error("Couldn't find segment(Row Count: {}): \n{}".format(len(sumamry_rows),row.prettify()))
+                # print(row.html)
                 continue
 
-            # WebDriverWait(self.driver, 10).until(
-            #     EC.presence_of_all_elements_located((By.TAG_NAME, 'upsell-itinerary-avail')))
+            src_lable = segments[0].find("span", {"class": "textual-label"})
+            src = src_lable.getText().strip()
+            src_time_span = segments[0].find("span", {"class": "sr-only"})
+            src_time = src_time_span.getText().strip()
 
-            body = self.driver.find_element_by_id('upsell-container-bound0')
-            body_html = body.get_attribute("outerHTML")
-            self.all_fare_body_htmls.append(body_html)
+            dst_lables = segments[-1].findAll("span", {"class": "textual-label"})
+            dst = dst_lables[-1].getText().strip()
+            dst_time_spans = segments[-1].findAll("span", {"class": "sr-only"})
+            dst_time = " ".join(dst_time_spans[-1].getText().strip().split())
 
-        print('Flight Summary Found')
+            flight_no_span = row.find("span", {"class": "e2e-flight-number"})
+            flight_no = flight_no_span.getText().strip()
 
-    def __save_data(self):
+            fare_names = row.findAll("upsell-fare-cell")
 
-        for fare_classes_html in self.all_fare_body_htmls:
+            flight_detail.update(
+                {'src': src, 'dst': dst, 'src_time': src_time, 'dst_time': dst_time, 'stops': len(segments) - 1,
+                 'f_no': flight_no})
 
-            soup = BeautifulSoup(fare_classes_html, "html.parser")
+            self.results.append(flight_detail)
 
-            sumamry_rows = soup.findAll("upsell-itinerary-avail")
+            for fare in fare_names:
+                name = fare.find('span', {'class': 'e2e-fare-name'}).getText().strip()
+                amt_span = fare.find('span', {'class': 'amount cash ng-star-inserted'})
+                amt = None
+                if amt_span:
+                    amt = amt_span.getText().strip()
+                else:
+                    amt_span_points = fare.find('span', {
+                        'class': 'amount reward-fare-cell-container hidden-selected-mobile ng-star-inserted'})
 
-            for row in sumamry_rows:
+                    if amt_span_points:
 
-                flight_detail = {'date': self.date, 'src': None, 'src_time': None, 'dst': None, 'dst_time': None,
-                                 'stops': 0, 'f_no': None,
+                        amt = " ".join(amt_span_points.getText().strip().split())
+                        if '+' in amt:
+                            amt = amt.replace("+", 'Points +')
 
-                                 'red_e-deal': None, 'flex': None, 'business': None, 'business_classic_reward': None,
-                                 'economy_classic_reward': None, 'sale': None, 'saver': None,
-                                 'premium_economy_sale': None,
-                                 'premium_economy_flex': None, 'first_saver': None,
-                                 'first_flex': None, 'business_saver': None, 'business_flex': None,
-                                 'premium_economy_saver': None, 'business_sale': None,
-                                 'premium_economy_classic_reward': None}
+                fare_final_name = name.lower().replace(" ", '_')
+                if fare_final_name == 'starter':
+                    fare_final_name = 'red_e-deal'
+                elif fare_final_name == 'max':
+                    fare_final_name = 'flex'
 
-                segments = row.findAll("div", {"class": "segment ng-star-inserted"})
-
-                src_lable = segments[0].find("span", {"class": "textual-label"})
-                src = src_lable.getText().strip()
-                src_time_span = segments[0].find("span", {"class": "sr-only"})
-                src_time = src_time_span.getText().strip()
-
-                dst_lables = segments[-1].findAll("span", {"class": "textual-label"})
-                dst = dst_lables[-1].getText().strip()
-                dst_time_spans = segments[-1].findAll("span", {"class": "sr-only"})
-                dst_time = " ".join(dst_time_spans[-1].getText().strip().split())
-
-                flight_no_span = row.find("span", {"class": "e2e-flight-number"})
-                flight_no = flight_no_span.getText().strip()
-
-                fare_names = row.findAll("upsell-fare-cell")
-
-                flight_detail.update(
-                    {'src': src, 'dst': dst, 'src_time': src_time, 'dst_time': dst_time, 'stops': len(segments) - 1,
-                     'f_no': flight_no})
-
-                self.results.append(flight_detail)
-                # print(
-                #     'Flight Number: {} (Stops: {})\n\t {} : {}\n\t {} : {}'.format(flight_no, len(segments) - 1, src,
-                #                                                                    src_time,
-                #                                                                    dst, dst_time))
-                for fare in fare_names:
-                    name = fare.find('span', {'class': 'e2e-fare-name'}).getText().strip()
-                    amt_span = fare.find('span', {'class': 'amount cash ng-star-inserted'})
-                    amt = None
-                    if amt_span:
-                        amt = amt_span.getText().strip()
-                    else:
-                        amt_span_points = fare.find('span', {
-                            'class': 'amount reward-fare-cell-container hidden-selected-mobile ng-star-inserted'})
-
-                        if amt_span_points:
-
-                            amt = " ".join(amt_span_points.getText().strip().split())
-                            if '+' in amt:
-                                amt = amt.replace("+", 'Points +')
-
-                    fare_final_name = name.lower().replace(" ", '_')
-                    if fare_final_name == 'starter':
-                        fare_final_name = 'red_e-deal'
-                    elif fare_final_name == 'max':
-                        fare_final_name = 'flex'
-
-                    flight_detail.update({fare_final_name: amt})
-                    # print("\t\t{}: {}".format(name, amt))
-
-        print('Data Extracted')
+                flight_detail.update({fare_final_name: amt})
 
     def __search(self):
-        print('Searching for Route [{}] for Date [{}] on page: {} '.format(self.route, self.date, START_URL))
+
         self.driver.get(START_URL)
 
         if self.first_search_done == False:
-            print('Entering DATE, SRC and DST.')
+            self.log_debug('Entering DATE, SRC and DST.')
             self.__click_one_way()
 
             self.__enter_place_code('src')
@@ -399,26 +497,27 @@ class QantasScrapper:
             self.__click_on_date()
             self.first_search_done = True
         else:
-            print('Entering SRC and DST Only')
+            self.log_debug('Entering SRC and DST Only')
             self.__enter_place_code('src')
             self.__enter_place_code('dst')
 
         self.__click_search()
 
-        self.__save_data()
+        # self.__save_data()
 
     def loop_over_routes(self):
         for self.route in self.routes_list:
 
             try:
+                self.log_info('Search Started')
                 self.__search()
             except:
-                print_exc()
+                self.log_exception('Error Processing.')
                 self.errors.append({'route': self.route, 'date': self.date, 'exe': sys.exc_info()[0]})
 
 
 def scrap(date, routes):
-    scrapper = QantasScrapper(date, routes, headless=False, close_driver=False)
+    scrapper = QantasScrapper(date, routes, headless=headless, close_driver=close_chrome_after_complete)
     scrapper.loop_over_routes()
     return scrapper.results, scrapper.errors
 
@@ -440,24 +539,25 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
     final_res = []
     final_ero = []
-    with concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+    #multiprocessing.cpu_count()
+    with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
         future_to_scrappers = {executor.submit(scrap, date, routes): "{}_{}".format(date, routes) for date in dates}
 
         for future in concurrent.futures.as_completed(future_to_scrappers):
 
-            print(future)
+
 
             date_route = future_to_scrappers[future]
 
             try:
                 data, error = future.result()
             except Exception as exc:
-                print('%r generated an exception: %s' % (date_route, exc))
+                log.error('%r generated an exception: %s' % (date_route, exc),exc_info=True)
             else:
                 final_res.extend(data)
                 final_ero.extend(error)
 
-                # print(json.dumps(data, indent=2))
+
 
     report_name = 'Qantas_Data_{}.xlsx'.format(job_id)
     error_rep_name = 'Error_Data_{}.xlsx'.format(job_id)
@@ -472,11 +572,12 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
                     'flex', 'business', 'business_classic_reward',
                     'economy_classic_reward', 'sale', 'saver', 'premium_economy_sale', 'premium_economy_flex',
                     'first_saver', 'first_flex', 'business_saver', 'business_flex', 'premium_economy_saver',
-                    'business_sale', 'premium_economy_classic_reward'])
+                    'business_sale', 'premium_economy_classic_reward','first_classic_reward'])
 
     write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, ['route', 'date', 'exe'])
 
-    send_mail('raushan2003@gmail.com',job_id, os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
+    if send_email:
+        send_mail(email_to_send_report,job_id, os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
 
     if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
         shutil.rmtree('chrome-profile')

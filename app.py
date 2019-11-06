@@ -1,16 +1,36 @@
+import logging
+logging.basicConfig(format='%(asctime)s - %(levelname)s:%(name)s : %(message)s',level=logging.DEBUG)
+
+
+
 from flask import Flask, render_template,request, jsonify
 import threading
-import new_monitor as scrapper
+import qantas_monitor as scrapper
 import datetime
 
+
 app = Flask(__name__)
+
+rootlog = logging.getLogger('werkzeug')
+rootlog.setLevel(logging.ERROR)
+
+rootlog = logging.getLogger('selenium')
+rootlog.setLevel(logging.ERROR)
+
+rootlog = logging.getLogger('urllib3')
+rootlog.setLevel(logging.ERROR)
+
+
+
 @app.route('/')
 def home():
-    if scrapper.is_job_running():
+    # if scrapper.is_job_running():
+    #
+    #     return render_template('job_running.html')
+    # else:
+    #     return render_template('home.html')
 
-        return render_template('job_running.html')
-    else:
-        return render_template('home.html')
+    return render_template('home.html')
 
 
 
@@ -19,7 +39,6 @@ def start():
 
     if scrapper.is_job_running():
         return jsonify(isError=True,
-                       statusCode=210,
                        data='Job Already Running. Please wait for it to finish.'), 200
 
 
@@ -40,7 +59,6 @@ def start():
 
     return jsonify(isError=False,
                    jobId=job_id,
-                   statusCode=202,
                    data='Job Accepted. User will be Notified via Email'), 200
 
 
