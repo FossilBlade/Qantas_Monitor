@@ -64,4 +64,8 @@ def start():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    from waitress import serve
+
+    serve(app, listen='*:5000')
+
+    # app.run(debug=True)

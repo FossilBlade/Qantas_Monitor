@@ -51,26 +51,43 @@ user_agent_list = [
 ]
 
 
-def write_to_excel(excel_path, data_list, column_list):
-    if data_list == None or len(data_list) == 0:
-        print('Data List empty for creating Excel.')
+def write_to_excel(excel_path, data_list,error_list, data_column_list,error_column_list):
+
+
+
+    if (data_list == None or len(data_list) == 0) and (error_list == None or len(error_list) == 0):
+        log.info('No Data for Creating Excel')
         return
 
-    print('Creating Excel')
-
-    prevlen = len(data_list[0])
-    for data in data_list:
-        if prevlen != len(data):
-            print("LENGTH NOT SAME")
-            print(str(prevlen))
-            print(str(data))
-        prevlen = len(data)
-
-    df = pd.pandas.DataFrame.from_dict(data_list, dtype=str)
     writer = pd.ExcelWriter(excel_path, engine='xlsxwriter', options={'strings_to_urls': False})
-    df.to_excel(writer, columns=column_list)
+    if data_list == None or len(data_list) == 0:
+        log.info('Data List empty for creating Excel.')
+    else:
+        prevlen = len(data_list[0])
+        for data in data_list:
+            if prevlen != len(data):
+                log.error("LENGTH NOT SAME")
+                log.error(str(prevlen))
+                log.error(str(data))
+            prevlen = len(data)
+        log.debug('Creating Data Sheet')
+        data_df = pd.pandas.DataFrame.from_dict(data_list, dtype=str)
+        data_df.to_excel(writer, columns=data_column_list, sheet_name='Result')
+
+    if error_list == None or len(error_list) == 0:
+        log.info('Error List empty for creating Excel.')
+    else:
+
+        log.debug('Creating Error Sheet Excel')
+        error_df = pd.pandas.DataFrame.from_dict(error_list, dtype=str)
+        error_df.to_excel(writer, columns=error_column_list, sheet_name='Errors')
+
     writer.close()
-    print('Excel Created at :' + os.path.abspath(excel_path))
+    log.info('Excel Created at :' + os.path.abspath(excel_path))
+
+
+
+
 
 
 def get_date_range(start_day, end_day):
@@ -440,13 +457,8 @@ def is_job_running():
 def run(routes: list, start_day: int, end_day: int, job_id=0):
     job_id = str(job_id)
 
-    report_name = 'Qantas_Data_{}.xlsx'.format(job_id)
-    error_rep_name = 'Error_Data_{}.xlsx'.format(job_id)
-    report_file_path_tmpl = 'db/{}/{}'
     error_folder = 'db/{}/error'.format(job_id)
-
-    if not os.path.exists(os.path.dirname(report_file_path_tmpl.format(job_id, report_name))):
-        os.makedirs(os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
+    report_name = 'db/{}/Qantas_Data_{}.xlsx'.format(job_id,job_id)
 
     if not os.path.exists(error_folder):
         os.makedirs(error_folder)
@@ -475,17 +487,19 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
                 final_res.extend(data)
                 final_ero.extend(error)
 
-    write_to_excel(report_file_path_tmpl.format(job_id, report_name), final_res,
+    write_to_excel(report_name, final_res,final_ero,
                    ['f_no', 'date', 'stops', 'src', 'src_time', 'dst', 'dst_time', 'red_e-deal',
                     'flex', 'business', 'business_classic_reward',
                     'economy_classic_reward', 'sale', 'saver', 'premium_economy_sale', 'premium_economy_flex',
                     'first_saver', 'first_flex', 'business_saver', 'business_flex', 'premium_economy_saver',
-                    'business_sale', 'premium_economy_classic_reward', 'first_classic_reward'])
+                    'business_sale', 'premium_economy_classic_reward', 'first_classic_reward'],['route', 'date', 'exe'])
 
-    write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, ['route', 'date', 'exe'])
+    # write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, )
 
     if send_email:
-        send_mail(email_to_send_report, job_id, os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
+        log.debug('Sending Mail to "{}"'.format(email_to_send_report))
+        send_mail(email_to_send_report, job_id, os.path.dirname(report_name))
+        log.info('Mail sent to "{}"'.format(email_to_send_report))
 
     if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
         shutil.rmtree('chrome-profile')
