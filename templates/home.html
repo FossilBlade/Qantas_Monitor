@@ -1,6 +1,47 @@
 <!DOCTYPE html>
 <html>
-<head><script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script></head>
+<head><script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script><style>
+body {font-family: Arial, Helvetica, sans-serif;}
+
+/* The Modal (background) */
+.modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1; /* Sit on top */
+  padding-top: 100px; /* Location of the box */
+  left: 0;
+  top: 0;
+  width: 100%; /* Full width */
+  height: 100%; /* Full height */
+  overflow: auto; /* Enable scroll if needed */
+  background-color: rgb(0,0,0); /* Fallback color */
+  background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+}
+
+/* Modal Content */
+.modal-content {
+  background-color: #fefefe;
+  margin: auto;
+  padding: 20px;
+  border: 1px solid #888;
+  width: 80%;
+}
+
+/* The Close Button */
+.close {
+  color: #aaaaaa;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+  color: #000;
+  text-decoration: none;
+  cursor: pointer;
+}
+</style></head>
 <body>
 <form>
  <fieldset>
@@ -17,7 +58,7 @@
 
 <form>
  <fieldset>
-  <legend>ROUTES <button id="add">Add New</button></legend>
+  <legend>ROUTES <button id="add">Add New</button><button id="clear">Clear All</button></legend>
      <br>
     <ul id="myList">
      <li>SYD-MEL <button id="SYD-MEL" type="button"
@@ -34,6 +75,21 @@
   </button>
 
 <div id="result"></div>
+
+<!-- The Modal -->
+<div id="myModal" class="modal">
+
+  <!-- Modal content -->
+  <div class="modal-content">
+    <span class="close">&times;</span>
+    <p>Add Comma seperated list e.g. SYD-LAX,MEL-DEL</p>
+      <input id="new_routes" type="text">
+      <button type="button" id="save_routes">
+      SAVE
+  </button>
+  </div>
+
+</div>
 
 <script>
 
@@ -119,7 +175,7 @@
 
 
 
-$("#add").click(function(e) {
+$("#add1").click(function(e) {
     e.preventDefault();
 
 
@@ -149,6 +205,72 @@ $("#add").click(function(e) {
 });
 
 
+
+
+</script>
+
+<script>
+
+    // Get the modal
+var modal = document.getElementById("myModal");
+
+// Get the button that opens the modal
+var add_btn = document.getElementById("add");
+
+var clear_btn = document.getElementById("clear");
+
+var save_btn = document.getElementById("save_routes");
+
+// Get the <span> element that closes the modal
+var span = document.getElementsByClassName("close")[0];
+
+// When the user clicks the button, open the modal
+add_btn.onclick = function(e) {
+  e.preventDefault();
+  modal.style.display = "block";
+}
+
+clear_btn.onclick = function(e) {
+  e.preventDefault();
+  document.getElementById("myList").innerHTML = '';
+}
+
+// When the user clicks on <span> (x), close the modal
+span.onclick = function() {
+  modal.style.display = "none";
+}
+
+// When the user clicks anywhere outside of the modal, close it
+window.onclick = function(event) {
+  if (event.target == modal) {
+    // modal.style.display = "none";
+  }
+}
+
+save_btn.onclick = function(e) {
+
+    e.preventDefault();
+
+    var existing_list = document.getElementById("myList").innerHTML;
+
+    var str = document.getElementById("new_routes").value;
+    var new_routes = str.split(",");
+
+    new_routes.forEach(function (value, i) {
+
+    existing_list = existing_list + '<li>'+ value +' <button id="'+value+'" type="button" onclick="remove(event)">Remove</button></li><br>';
+
+
+});
+
+    document.getElementById("myList").innerHTML = existing_list;
+
+
+
+
+
+  modal.style.display = "none";
+}
 
 
 </script>
