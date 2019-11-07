@@ -26,12 +26,11 @@ import concurrent.futures
 import multiprocessing
 
 from email_sender import send_mail
-from config import email_to_send_report, close_chrome_after_complete,headless,send_email
-
+from config import email_to_send_report, close_chrome_after_complete, headless, send_email
 
 import logging
-log = logging.getLogger(__name__)
 
+log = logging.getLogger(__name__)
 
 ############### DO NOT REMOVE BELOW ####################################
 import chromedriver_binary  # Adds chromedriver binary to path
@@ -95,24 +94,23 @@ class QantasScrapper:
         self.date = date
         self.__setup_driver()
 
-    def log_info(self,msg):
-        log.info('[{}/{}] - {}'.format(self.date,self.route,msg))
+    def log_info(self, msg):
+        log.info('[{}/{}] - {}'.format(self.date, self.route, msg))
 
     def log_exception(self, msg):
-        log.error('[{}/{}] - {}'.format(self.date,self.route,msg),exc_info=True)
+        log.error('[{}/{}] - {}'.format(self.date, self.route, msg), exc_info=True)
 
     def log_error(self, msg):
         log.error('[{}/{}] - {}'.format(self.date, self.route, msg))
 
-    def log_debug(self,msg):
-        log.debug('[{}/{}] - {}'.format(self.date,self.route,msg))
+    def log_debug(self, msg):
+        log.debug('[{}/{}] - {}'.format(self.date, self.route, msg))
 
     def __del__(self):
         if self.close_driver == True and self.driver:
             self.driver.quit()
 
     def __setup_driver(self):
-
 
         options = webdriver.ChromeOptions()
         options.add_argument('--profile-directory=Default')
@@ -159,7 +157,6 @@ class QantasScrapper:
 
         self.driver.set_page_load_timeout(page_load_timeout)
 
-
     def __process_displayed_months(self, day, mon_name, year):
         tables = self.driver.find_elements_by_xpath(
             '//div[@class="date-picker__calendar-container"]//table[@class="date-picker__calendar-table"]')
@@ -171,8 +168,8 @@ class QantasScrapper:
 
                 display_day = table.find_element_by_xpath(
                     './/span[@class="date-picker__calendar-weekdays-items-text" and text()="{}"]'.format(day))
-                display_day.click()
-                # driver.execute_script("arguments[0].click();", display_day)
+                # display_day.click()
+                self.driver.execute_script("arguments[0].click();", display_day)
                 return []
             else:
                 dis_mon_ame = display_st[0].upper() + display_st[1:3].lower()
@@ -197,13 +194,13 @@ class QantasScrapper:
 
         if len(displayed_mon_nos) == 2:
             while len(displayed_mon_nos) != 0:
-                self.driver.find_element_by_css_selector(
-                    '.date-picker__arrow.date-picker__arrow-right.qfa1-arrow-icon').click()
+                next_mon = self.driver.find_element_by_css_selector(
+                    '.date-picker__arrow.date-picker__arrow-right.qfa1-arrow-icon')
+                self.driver.execute_script("arguments[0].click();", next_mon)
                 displayed_mon_nos = self.__process_displayed_months(day, mon_name, year)
                 sleep(.5)
 
     def __click_one_way(self):
-
 
         try:
             oneway = self.driver.find_element_by_xpath('//*[@id="oneway"]')
@@ -256,9 +253,10 @@ class QantasScrapper:
 
         src_btn = WebDriverWait(self.driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, '//button[text()="SEARCH FLIGHTS"]')))
-        self.driver.execute_script("arguments[0].scrollIntoView();", src_btn)
-        src_btn.location_once_scrolled_into_view
-        src_btn.click()
+        # self.driver.execute_script("arguments[0].scrollIntoView();", src_btn)
+        # src_btn.location_once_scrolled_into_view
+        self.driver.execute_script("arguments[0].click();", src_btn)
+        # src_btn.click()
 
         # self.driver.find_element_by_xpath('//button[text()="SEARCH FLIGHTS"]').click()
 
@@ -271,12 +269,12 @@ class QantasScrapper:
             WebDriverWait(self.driver, 10).until(
                 EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
 
-
             # e2e-flight-number
 
 
         except:
-            self.log_info('First Fare Type not found. Trying to find other fare types.')
+            # self.log_exception('First Fare Type not found.')
+            raise Exception('First Fare Type not found: {}'.format())
         else:
             body = self.driver.find_element_by_id('upsell-container-bound0')
             body_html = body.get_attribute("outerHTML")
@@ -287,10 +285,11 @@ class QantasScrapper:
         extra_fare_classes_names = []
         try:
             extra_fare_classes = self.driver.find_elements_by_xpath('//div[@class="cabin-selector-row"]//button')[1:]
-            for fare_class in extra_fare_classes:
-                extra_fare_classes_names.append(fare_class.text)
         except:
             self.log_info('Other Fare Types not found.')
+        else:
+            for fare_class in extra_fare_classes:
+                extra_fare_classes_names.append(fare_class.text)
 
         for fare_class_name in extra_fare_classes_names:
             fare_class = self.driver.find_element_by_xpath(
@@ -299,24 +298,24 @@ class QantasScrapper:
             self.log_info('Clicking and processing fare type: {}'.format(fare_class_name))
             fare_class.click()
 
-
-            old_list = WebDriverWait(self.driver, 15).until(
-                EC.presence_of_element_located((By.XPATH,
-                                                '//div[@class="card-header" or contains(@class,"card-warning")]')))
-            old_txt = old_list.text.strip()
-
-
+            # old_list = WebDriverWait(self.driver, 15).until(
+            #     EC.presence_of_element_located((By.XPATH,
+            #                                     '//div[@class="card-header" or contains(@class,"card-warning")]')))
+            old_txt = None
 
             while True:
 
-                if old_txt.startswith(fare_class_name) or "We don’t have any seats available, try another cabin class" in  old_txt:
-                    break
-                old_list = WebDriverWait(self.driver, 15).until(
+                new_list = WebDriverWait(self.driver, 15).until(
                     EC.presence_of_element_located((By.XPATH,
                                                     '//div[@class="card-header" or contains(@class,"card-warning")]')))
-                old_txt = old_list.text.strip()
-                sleep(.5)
+                new_txt = new_list.text.strip()
 
+                if old_txt != new_txt or "We don’t have any seats available, try another cabin class" in new_txt:
+
+                    break
+                else:
+                    old_txt = new_txt
+                sleep(.5)
 
             try:
                 # WebDriverWait(self.driver, 10).until(
@@ -410,10 +409,9 @@ class QantasScrapper:
     #
     #                 flight_detail.update({fare_final_name: amt})
 
-    def __save_data(self,fare_classe_html):
+    def __save_data(self, fare_classe_html):
 
         self.log_info('Extracting info from HTML.')
-
 
         soup = BeautifulSoup(fare_classe_html, "html.parser")
 
@@ -432,9 +430,10 @@ class QantasScrapper:
                              'premium_economy_saver': None, 'business_sale': None,
                              'premium_economy_classic_reward': None, 'first_classic_reward': None}
 
-            segments = row.findAll("div", {"class": "segment ng-star-inserted"})
+            # segments = row.findAll("div", {"class": "segment ng-star-inserted"})
+            segments = row.findAll('upsell-segment-details')
             if len(segments) == 0:
-                self.log_error("Couldn't find segment(Row Count: {}): \n{}".format(len(sumamry_rows),row.prettify()))
+                self.log_error("Couldn't find segment(Row Count: {}): \n{}".format(len(sumamry_rows), row.prettify()))
                 # print(row.html)
                 continue
 
@@ -513,7 +512,7 @@ class QantasScrapper:
                 self.__search()
             except:
                 self.log_exception('Error Processing.')
-                self.errors.append({'route': self.route, 'date': self.date, 'exe': sys.exc_info()[0]})
+                self.errors.append({'route': self.route, 'date': self.date, 'exe': sys.exc_info()[1]})
 
 
 def scrap(date, routes):
@@ -528,6 +527,7 @@ def is_job_running():
     else:
         return False
 
+
 def run(routes: list, start_day: int, end_day: int, job_id=0):
     job_id = str(job_id)
 
@@ -539,25 +539,21 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
     final_res = []
     final_ero = []
-    #multiprocessing.cpu_count()
+    # multiprocessing.cpu_count()
     with concurrent.futures.ProcessPoolExecutor(max_workers=4) as executor:
         future_to_scrappers = {executor.submit(scrap, date, routes): "{}_{}".format(date, routes) for date in dates}
 
         for future in concurrent.futures.as_completed(future_to_scrappers):
-
-
 
             date_route = future_to_scrappers[future]
 
             try:
                 data, error = future.result()
             except Exception as exc:
-                log.error('%r generated an exception: %s' % (date_route, exc),exc_info=True)
+                log.error('%r generated an exception: %s' % (date_route, exc), exc_info=True)
             else:
                 final_res.extend(data)
                 final_ero.extend(error)
-
-
 
     report_name = 'Qantas_Data_{}.xlsx'.format(job_id)
     error_rep_name = 'Error_Data_{}.xlsx'.format(job_id)
@@ -572,12 +568,12 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
                     'flex', 'business', 'business_classic_reward',
                     'economy_classic_reward', 'sale', 'saver', 'premium_economy_sale', 'premium_economy_flex',
                     'first_saver', 'first_flex', 'business_saver', 'business_flex', 'premium_economy_saver',
-                    'business_sale', 'premium_economy_classic_reward','first_classic_reward'])
+                    'business_sale', 'premium_economy_classic_reward', 'first_classic_reward'])
 
     write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, ['route', 'date', 'exe'])
 
     if send_email:
-        send_mail(email_to_send_report,job_id, os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
+        send_mail(email_to_send_report, job_id, os.path.dirname(report_file_path_tmpl.format(job_id, report_name)))
 
     if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
         shutil.rmtree('chrome-profile')
