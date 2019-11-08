@@ -10,7 +10,7 @@ from selenium.webdriver.chrome.options import DesiredCapabilities
 from selenium.webdriver.common.proxy import Proxy, ProxyType
 import sys
 
-from time import sleep
+from time import sleep,time
 from bs4 import BeautifulSoup
 from traceback import print_exc
 
@@ -326,9 +326,9 @@ class QantasScrapper:
             fare_class.click()
 
             timeout = 20
-            timeout_start = time.time()
+            timeout_start = time()
             while True:
-                if time.time() < timeout_start + timeout:
+                if time() > timeout_start + timeout:
                     break
 
                 new_list = WebDriverWait(self.driver, 10).until(
