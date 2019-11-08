@@ -28,6 +28,8 @@ import multiprocessing
 from email_sender import send_mail
 from config import email_to_send_report, close_chrome_after_complete, headless, send_email
 
+import socket
+
 import logging
 
 log = logging.getLogger(__name__)
@@ -49,6 +51,13 @@ user_agent_list = [
     # 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:61.0) Gecko/20100101 Firefox/70.0',
     # 'Mozilla/5.0 (X11; Linux i586; rv:31.0) Gecko/20100101 Firefox/70.0'
 ]
+
+def get_free_tcp_port():
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.bind(('', 0))
+    addr, port = tcp.getsockname()
+    tcp.close()
+    return port
 
 
 def write_to_excel(excel_path, data_list,error_list, data_column_list,error_column_list):
@@ -133,6 +142,7 @@ class QantasScrapper:
         options = webdriver.ChromeOptions()
         options.add_argument('--profile-directory=Default')
         options.add_argument("--user-data-dir=chrome-profile/profile_{}".format(self.date))
+        
 
         options.add_argument("disable-infobars")
         options.add_argument("disable-extensions")
@@ -163,7 +173,15 @@ class QantasScrapper:
         options.add_experimental_option("prefs", prefs)
 
         if self.headless:
-            options.headless = True
+            options.binary_location = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+            options.headless = True            
+            options.add_argument("remote-debugging-port={}".format(get_free_tcp_port()))
+            #options.add_argument("no-sandbox")
+            #options.add_argument('disable-gpu')
+            #options.add_argument('disable-dev-shm-usage')
+            #options.add_argument("test-type=browser")
+            #options.add_argument("incognito")
+            
 
             options.add_argument('start-maximized')
 
@@ -301,9 +319,12 @@ class QantasScrapper:
         for fare_class_name in extra_fare_classes_names:
             fare_class = self.driver.find_element_by_xpath(
                 '//div[@class="cabin-selector-row"]//button[contains(text(),"{}")]'.format(fare_class_name))
+                
+            
 
             self.log_info('Clicking and processing fare type: {}'.format(fare_class_name))
             fare_class.click()
+            
 
             old_txt = None
 
