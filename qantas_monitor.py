@@ -173,7 +173,7 @@ class QantasScrapper:
         options.add_experimental_option("prefs", prefs)
 
         if self.headless:
-            options.binary_location = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+            # options.binary_location = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
             options.headless = True            
             options.add_argument("remote-debugging-port={}".format(get_free_tcp_port()))
             #options.add_argument("no-sandbox")
@@ -295,9 +295,6 @@ class QantasScrapper:
             WebDriverWait(self.driver, 10).until(
                 EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
 
-
-
-
         except:
 
             raise Exception('First Fare Type not found: {}'.format(sys.exc_info()[1]))
@@ -319,31 +316,35 @@ class QantasScrapper:
         for fare_class_name in extra_fare_classes_names:
             fare_class = self.driver.find_element_by_xpath(
                 '//div[@class="cabin-selector-row"]//button[contains(text(),"{}")]'.format(fare_class_name))
-                
-            
+
+            old_list = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH,
+                                                '//div[@class="card-header" or contains(@class,"card-warning")]')))
+            old_txt = old_list.text.strip()
 
             self.log_info('Clicking and processing fare type: {}'.format(fare_class_name))
             fare_class.click()
-            
 
-            old_txt = None
-
+            timeout = 20
+            timeout_start = time.time()
             while True:
+                if time.time() < timeout_start + timeout:
+                    break
 
-                new_list = WebDriverWait(self.driver, 15).until(
+                new_list = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.XPATH,
                                                     '//div[@class="card-header" or contains(@class,"card-warning")]')))
                 new_txt = new_list.text.strip()
 
                 if old_txt != new_txt or "We don’t have any seats available, try another cabin class" in new_txt:
                     break
-                else:
-                    old_txt = new_txt
+                # else:
+                #     old_txt = new_txt
                 sleep(.5)
 
             try:
 
-                WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, 5).until(
                     EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
 
             except:
