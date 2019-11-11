@@ -52,6 +52,17 @@ user_agent_list = [
     # 'Mozilla/5.0 (X11; Linux i586; rv:31.0) Gecko/20100101 Firefox/70.0'
 ]
 
+
+fare_type_list = ['red_e-deal', 'flex', 'business', 'business_classic_reward',
+                          'economy_classic_reward', 'sale', 'saver',
+                          'premium_economy_sale',
+                          'premium_economy_flex', 'first_saver',
+                          'first_flex', 'business_saver', 'business_flex',
+                          'premium_economy_saver', 'business_sale',
+                          'premium_economy_classic_reward', 'first_classic_reward']
+
+fare_name_tmpl = '{} Fare'
+
 def get_free_tcp_port():
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tcp.bind(('', 0))
@@ -75,13 +86,13 @@ def write_to_excel(excel_path, data_list,error_list, data_column_list,error_colu
         prevlen = len(data_list[0])
         for data in data_list:
             if prevlen != len(data):
-                log.error("LENGTH NOT SAME")
-                log.error(str(prevlen))
-                log.error(str(data))
+                log.warning("LENGTH NOT SAME")
+                log.warning(str(prevlen))
+                log.warning(str(data))
             prevlen = len(data)
         log.debug('Creating Data Sheet')
         data_df = pd.pandas.DataFrame.from_dict(data_list, dtype=str)
-        data_df.to_excel(writer, columns=data_column_list, sheet_name='Result')
+        data_df.to_excel(writer, columns=data_column_list, sheet_name='Result',index=False)
 
     if error_list == None or len(error_list) == 0:
         log.info('Error List empty for creating Excel.')
@@ -89,14 +100,10 @@ def write_to_excel(excel_path, data_list,error_list, data_column_list,error_colu
 
         log.debug('Creating Error Sheet Excel')
         error_df = pd.pandas.DataFrame.from_dict(error_list, dtype=str)
-        error_df.to_excel(writer, columns=error_column_list, sheet_name='Errors')
+        error_df.to_excel(writer, columns=error_column_list, sheet_name='Errors',index=False)
 
     writer.close()
     log.info('Excel Created at :' + os.path.abspath(excel_path))
-
-
-
-
 
 
 def get_date_range(start_day, end_day):
@@ -173,16 +180,9 @@ class QantasScrapper:
         options.add_experimental_option("prefs", prefs)
 
         if self.headless:
-            # options.binary_location = "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+
             options.headless = True            
             options.add_argument("remote-debugging-port={}".format(get_free_tcp_port()))
-            #options.add_argument("no-sandbox")
-            #options.add_argument('disable-gpu')
-            #options.add_argument('disable-dev-shm-usage')
-            #options.add_argument("test-type=browser")
-            #options.add_argument("incognito")
-            
-
             options.add_argument('start-maximized')
 
             self.driver = webdriver.Chrome(options=options, desired_capabilities=None)
@@ -203,7 +203,7 @@ class QantasScrapper:
 
                 display_day = table.find_element_by_xpath(
                     './/span[@class="date-picker__calendar-weekdays-items-text" and text()="{}"]'.format(day))
-                # display_day.click()
+
                 self.driver.execute_script("arguments[0].click();", display_day)
                 return []
             else:
@@ -291,10 +291,8 @@ class QantasScrapper:
         self.driver.execute_script("arguments[0].click();", src_btn)
 
         try:
-
             WebDriverWait(self.driver, 10).until(
                 EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
-
         except:
 
             raise Exception('First Fare Type not found: {}'.format(sys.exc_info()[1]))
@@ -338,8 +336,7 @@ class QantasScrapper:
 
                 if old_txt != new_txt or "We don’t have any seats available, try another cabin class" in new_txt:
                     break
-                # else:
-                #     old_txt = new_txt
+
                 sleep(.5)
 
             try:
@@ -364,34 +361,28 @@ class QantasScrapper:
 
         soup = BeautifulSoup(fare_classe_html, "html.parser")
 
-        sumamry_rows = soup.findAll("upsell-itinerary-avail")
+        summary_rows = soup.findAll("upsell-itinerary-avail")
 
-        for row in sumamry_rows:
+        for row in summary_rows:
 
-            flight_detail = {'date': self.date, 'src': None, 'src_time': None, 'dst': None, 'dst_time': None,
-                             'stops': 0, 'f_no': None,
+            flight_detail = {'Date': self.date, 'Departs': None, 'Dep Time': None, 'Arrives': None, 'Arr Time': None,
+                             'Stops': 0, 'Flight': None}
 
-                             'red_e-deal': None, 'flex': None, 'business': None, 'business_classic_reward': None,
-                             'economy_classic_reward': None, 'sale': None, 'saver': None,
-                             'premium_economy_sale': None,
-                             'premium_economy_flex': None, 'first_saver': None,
-                             'first_flex': None, 'business_saver': None, 'business_flex': None,
-                             'premium_economy_saver': None, 'business_sale': None,
-                             'premium_economy_classic_reward': None, 'first_classic_reward': None}
+            for fare_type in fare_type_list:
+                flight_detail.update({fare_name_tmpl.format(fare_type): None})
 
             segments = row.findAll('upsell-segment-details')
             if len(segments) == 0:
-                self.log_error("Couldn't find segment(Row Count: {}): \n{}".format(len(sumamry_rows), row.prettify()))
-
+                self.log_error("Couldn't find segment(Row Count: {}): \n{}".format(len(summary_rows), row.prettify()))
                 continue
 
-            src_lable = segments[0].find("span", {"class": "textual-label"})
-            src = src_lable.getText().strip()
+            src_label = segments[0].find("span", {"class": "textual-label"})
+            src = src_label.getText().strip()
             src_time_span = segments[0].find("span", {"class": "sr-only"})
             src_time = src_time_span.getText().strip()
 
-            dst_lables = segments[-1].findAll("span", {"class": "textual-label"})
-            dst = dst_lables[-1].getText().strip()
+            dst_labels = segments[-1].findAll("span", {"class": "textual-label"})
+            dst = dst_labels[-1].getText().strip()
             dst_time_div_row = segments[-1].findAll("div", {"class": "row"})
             dst_time_div = dst_time_div_row[1].findAll("div")[-1]
             dst_time = " ".join(dst_time_div.getText().strip().split())
@@ -402,8 +393,8 @@ class QantasScrapper:
             fare_names = row.findAll("upsell-fare-cell")
 
             flight_detail.update(
-                {'src': src, 'dst': dst, 'src_time': src_time, 'dst_time': dst_time, 'stops': len(segments) - 1,
-                 'f_no': flight_no})
+                {'Departs': src, 'Arrives': dst, 'Dep Time': src_time, 'Arr Time': dst_time, 'Stops': len(segments) - 1,
+                 'Flight': flight_no})
 
             self.results.append(flight_detail)
 
@@ -429,7 +420,7 @@ class QantasScrapper:
                 elif fare_final_name == 'max':
                     fare_final_name = 'flex'
 
-                flight_detail.update({fare_final_name: amt})
+                flight_detail.update({fare_name_tmpl.format(fare_final_name): amt})
 
     def __search(self):
 
@@ -509,12 +500,12 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
                 final_res.extend(data)
                 final_ero.extend(error)
 
+    report_excel_columns = ['Date',	'Departs'	,'Dep Time'	,'Arrives',	'Arr Time',	'Stops',	'Flight']
+    for fare_type in fare_type_list:
+        report_excel_columns.append(fare_name_tmpl.format(fare_type))
+
     write_to_excel(report_name, final_res,final_ero,
-                   ['f_no', 'date', 'stops', 'src', 'src_time', 'dst', 'dst_time', 'red_e-deal',
-                    'flex', 'business', 'business_classic_reward',
-                    'economy_classic_reward', 'sale', 'saver', 'premium_economy_sale', 'premium_economy_flex',
-                    'first_saver', 'first_flex', 'business_saver', 'business_flex', 'premium_economy_saver',
-                    'business_sale', 'premium_economy_classic_reward', 'first_classic_reward'],['route', 'date', 'exe'])
+                   report_excel_columns,['route', 'date', 'exe'])
 
     # write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, )
 
