@@ -1,5 +1,5 @@
 
-email_to_send_report = 'raushan2003@gmail.com'
+email_to_send_report = 'raushanxxxx@example.com'
 
 send_email = True
 close_chrome_after_complete=True
