@@ -27,7 +27,7 @@ import multiprocessing
 
 from email_sender import send_mail
 from config import email_to_send_report, close_chrome_after_complete, headless, send_email, parallel_processe_count, \
-    print_trace_back
+    print_trace_back,auto_retry_count
 
 import socket
 
@@ -40,7 +40,7 @@ import chromedriver_binary  # Adds chromedriver binary to path
 
 page_load_timeout = 60
 
-START_URL = 'https://www.qantas.com/au/en/book-a-trip/flights.html?showMod=0'
+START_URL = 'https://www.qantas.com/au/en/book-a-trip/flights.html'
 user_agent_list = [
     # Chrome
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
@@ -243,15 +243,16 @@ class QantasScrapper:
                 old_form_link = self.driver.find_element_by_xpath(
                     "//p[contains(text(),'still working through the accessibility functionality of this form')]//a")
 
+
                 self.log_debug('Different view Detected. Try to go to base view.')
                 self.driver.get(old_form_link.get_attribute('href'))
 
                 oneway = self.driver.find_element_by_xpath('//*[@id="oneway"]')
                 self.driver.execute_script("arguments[0].click();", oneway)
             except:
-                self.log_exception('Error Clicking One-Way.')
+                raise Exception("Start page did not load properly. Can't find expected elements.")
 
-                raise
+
 
     def __enter_place_code(self, type):
 
@@ -276,31 +277,7 @@ class QantasScrapper:
 
         elif type == "dst":
 
-            #
-            # people_input = WebDriverWait(self.driver, 5).until(
-            #     EC.element_to_be_clickable((By.XPATH, '//input[@class="qfa1-input qfa1-people-selector__input"]')))
-            #
-            # people_count = people_input.get_attribute('value')
-            # self.log_debug('PEOPLE COUNT: ' + people_count)
-            #
-            # self.driver.execute_script("arguments[0].click();", people_input)
-            #
-            # if people_count:
-            #     count = int(people_count.split()[0])
-            #     if count % 2 == 1:
-            #         ppl_plus = WebDriverWait(self.driver, 5).until(
-            #             EC.element_to_be_clickable((By.XPATH, '//div[@class="qfa1-numberpicker__plus-icon"]')))
-            #
-            #         self.driver.execute_script("arguments[0].click();", ppl_plus)
-            #     else:
-            #         ppl_minus = WebDriverWait(self.driver, 5).until(
-            #             EC.element_to_be_clickable((By.XPATH, '//div[@class="qfa1-numberpicker__minus-icon"]')))
-            #         self.driver.execute_script("arguments[0].click();", ppl_minus)
-            #
-            #     btn = WebDriverWait(self.driver, 5).until(
-            #         EC.element_to_be_clickable((By.XPATH, '//button[@class="qfa1-submit-button__button"]')))
-            #
-            #     btn.click()
+
 
             place_code = self.route.split('-')[1]
             self.log_debug('Entering DST: ' + place_code)
@@ -329,10 +306,10 @@ class QantasScrapper:
             raise Exception('Incorrect Place Type')
 
     def send_keys(self, elem, keys):
-        sleep(.3)
+        sleep(.1)
         for i in range(len(keys)):
             elem.send_keys(keys[i])
-            sleep(.3)
+            sleep(.1)
 
         if elem.get_attribute('value') != keys:
             elem.clear()
@@ -525,6 +502,12 @@ class QantasScrapper:
 
         self.driver.get(START_URL)
 
+        # try:
+        #     WebDriverWait(self.driver, 60).until(
+        #         EC.element_to_be_clickable((By.XPATH, '//button[text()="SEARCH FLIGHTS"]')))
+        # except:
+        #     raise Exception("Start page did not load in 60 Secs.")
+
         if self.first_search_done == False:
             self.__click_one_way()
 
@@ -569,10 +552,47 @@ class QantasScrapper:
         self.driver.set_window_size(original_size['width'], original_size['height'])
 
 
-def scrap(date, routes, job_id):
+def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counter=1):
+
+
+    # if called_counter > auto_retry_count:
+    #     return
+    #
+    # called_counter += 1
+
     scrapper = QantasScrapper(date, routes, job_id=job_id, headless=headless, close_driver=close_chrome_after_complete)
     scrapper.loop_over_routes()
-    return scrapper.results, scrapper.errors
+
+    full_data.extend(scrapper.results)
+
+    retry_routes = []
+    removed_error = []
+
+    for err in scrapper.errors:
+        if 'Invalid Code Used' not in err.get('exe'):
+            retry_routes.append(err.get('route'))
+            removed_error.append(err)
+        else:
+            full_error.append(err)
+
+
+    if called_counter > auto_retry_count:
+        full_error.extend(removed_error)
+        return
+
+    called_counter += 1
+
+    if len(retry_routes) > 1:
+
+        log.info('##### RETRYING FAILED ROUTES: ' + str(retry_routes))
+        scrap_retry(scrapper.errors[0].get('date'), retry_routes, job_id, full_data=full_data, full_error=full_error,called_counter=called_counter)
+
+
+def scrap(date, routes, job_id):
+    full_data = []
+    full_error = []
+    scrap_retry(date, routes, job_id, full_data=full_data, full_error=full_error)
+    return full_data, full_error
 
 
 def is_job_running():
@@ -619,45 +639,45 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
             log.info('===== PERCENT COMPLETE: ' + str((completed_count * 100) / len(dates)))
 
-    if len(final_ero) > 0:
-
-        retied_final_erros = []
-
-        new_jobs = {}
-
-        for err in final_ero:
-            if 'Invalid Code Used' not in err.get('exe'):
-                if new_jobs.get(err.get('date')):
-                    new_jobs.get(err.get('date')).append(err.get('route'))
-                else:
-                    new_jobs.update({err.get('date'): [err.get('route')]})
-
-            else:
-                retied_final_erros.append(err)
-
-        if len(new_jobs) > 1:
-            log.info('##### RETRYING FAILED ROUTES ONLY ONCE')
-
-            with concurrent.futures.ProcessPoolExecutor(max_workers=parallel_processe_count) as executor:
-
-                future_to_scrappers = {executor.submit(scrap, date, routes, job_id): "{}_{}".format(date, routes) for
-                                       date, routes
-                                       in
-                                       new_jobs.items()}
-
-                for future in concurrent.futures.as_completed(future_to_scrappers):
-
-                    date_route = future_to_scrappers[future]
-
-                    try:
-                        data, error = future.result()
-                    except Exception as exc:
-                        log.error('%r generated an exception: %s' % (date_route, exc), exc_info=True)
-                    else:
-                        final_res.extend(data)
-                        retied_final_erros.extend(error)
-
-        final_ero = retied_final_erros
+    # if len(final_ero) > 0:
+    #
+    #     retied_final_erros = []
+    #
+    #     new_jobs = {}
+    #
+    #     for err in final_ero:
+    #         if 'Invalid Code Used' not in err.get('exe'):
+    #             if new_jobs.get(err.get('date')):
+    #                 new_jobs.get(err.get('date')).append(err.get('route'))
+    #             else:
+    #                 new_jobs.update({err.get('date'): [err.get('route')]})
+    #
+    #         else:
+    #             retied_final_erros.append(err)
+    #
+    #     if len(new_jobs) > 1:
+    #         log.info('##### RETRYING FAILED ROUTES ONLY ONCE')
+    #
+    #         with concurrent.futures.ProcessPoolExecutor(max_workers=parallel_processe_count) as executor:
+    #
+    #             future_to_scrappers = {executor.submit(scrap, date, routes, job_id): "{}_{}".format(date, routes) for
+    #                                    date, routes
+    #                                    in
+    #                                    new_jobs.items()}
+    #
+    #             for future in concurrent.futures.as_completed(future_to_scrappers):
+    #
+    #                 date_route = future_to_scrappers[future]
+    #
+    #                 try:
+    #                     data, error = future.result()
+    #                 except Exception as exc:
+    #                     log.error('%r generated an exception: %s' % (date_route, exc), exc_info=True)
+    #                 else:
+    #                     final_res.extend(data)
+    #                     retied_final_erros.extend(error)
+    #
+    #     final_ero = retied_final_erros
 
     report_excel_columns = ['Date', 'Departs', 'Dep Time', 'Arrives', 'Arr Time', 'Stops', 'Flight']
     for fare_type in fare_type_list:
