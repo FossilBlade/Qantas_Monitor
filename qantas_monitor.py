@@ -5,12 +5,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import os
 import shutil
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 from selenium.webdriver.chrome.options import DesiredCapabilities
 from selenium.webdriver.common.proxy import Proxy, ProxyType
 import sys
 
-from time import sleep,time
+from time import sleep, time
 from bs4 import BeautifulSoup
 from traceback import print_exc
 
@@ -26,7 +26,8 @@ import concurrent.futures
 import multiprocessing
 
 from email_sender import send_mail
-from config import email_to_send_report, close_chrome_after_complete, headless, send_email
+from config import email_to_send_report, close_chrome_after_complete, headless, send_email, parallel_processe_count, \
+    print_trace_back
 
 import socket
 
@@ -37,31 +38,27 @@ log = logging.getLogger(__name__)
 ############### DO NOT REMOVE BELOW ####################################
 import chromedriver_binary  # Adds chromedriver binary to path
 
-page_load_timeout = 45
+page_load_timeout = 60
 
-START_URL = 'https://www.qantas.com/au/en/book-a-trip/flights.html'
+START_URL = 'https://www.qantas.com/au/en/book-a-trip/flights.html?showMod=0'
 user_agent_list = [
     # Chrome
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
 
-    # Firefox
-    # 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:54.0) Gecko/20100101 Firefox/70.0',
-    # 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.13; rv:61.0) Gecko/20100101 Firefox/70.0',
-    # 'Mozilla/5.0 (X11; Linux i586; rv:31.0) Gecko/20100101 Firefox/70.0'
 ]
 
-
 fare_type_list = ['red_e-deal', 'flex', 'business', 'business_classic_reward',
-                          'economy_classic_reward', 'sale', 'saver',
-                          'premium_economy_sale',
-                          'premium_economy_flex', 'first_saver',
-                          'first_flex', 'business_saver', 'business_flex',
-                          'premium_economy_saver', 'business_sale',
-                          'premium_economy_classic_reward', 'first_classic_reward']
+                  'economy_classic_reward', 'sale', 'saver',
+                  'premium_economy_sale',
+                  'premium_economy_flex', 'first_saver',
+                  'first_flex', 'business_saver', 'business_flex',
+                  'premium_economy_saver', 'business_sale',
+                  'premium_economy_classic_reward', 'first_classic_reward']
 
 fare_name_tmpl = '{} Fare'
+
 
 def get_free_tcp_port():
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -71,10 +68,7 @@ def get_free_tcp_port():
     return port
 
 
-def write_to_excel(excel_path, data_list,error_list, data_column_list,error_column_list):
-
-
-
+def write_to_excel(excel_path, data_list, error_list, data_column_list, error_column_list):
     if (data_list == None or len(data_list) == 0) and (error_list == None or len(error_list) == 0):
         log.info('No Data for Creating Excel')
         return
@@ -92,7 +86,7 @@ def write_to_excel(excel_path, data_list,error_list, data_column_list,error_colu
             prevlen = len(data)
         log.debug('Creating Data Sheet')
         data_df = pd.pandas.DataFrame.from_dict(data_list, dtype=str)
-        data_df.to_excel(writer, columns=data_column_list, sheet_name='Result',index=False)
+        data_df.to_excel(writer, columns=data_column_list, sheet_name='Result', index=False)
 
     if error_list == None or len(error_list) == 0:
         log.info('Error List empty for creating Excel.')
@@ -100,7 +94,7 @@ def write_to_excel(excel_path, data_list,error_list, data_column_list,error_colu
 
         log.debug('Creating Error Sheet Excel')
         error_df = pd.pandas.DataFrame.from_dict(error_list, dtype=str)
-        error_df.to_excel(writer, columns=error_column_list, sheet_name='Errors',index=False)
+        error_df.to_excel(writer, columns=error_column_list, sheet_name='Errors', index=False)
 
     writer.close()
     log.info('Excel Created at :' + os.path.abspath(excel_path))
@@ -132,24 +126,27 @@ class QantasScrapper:
         log.info('[{}/{}] - {}'.format(self.date, self.route, msg))
 
     def log_exception(self, msg):
+
         log.error('[{}/{}] - {}'.format(self.date, self.route, msg), exc_info=True)
 
     def log_error(self, msg):
         log.error('[{}/{}] - {}'.format(self.date, self.route, msg))
 
+    def log_warn(self, msg):
+        log.warning('[{}/{}] - {}'.format(self.date, self.route, msg))
+
     def log_debug(self, msg):
         log.debug('[{}/{}] - {}'.format(self.date, self.route, msg))
 
-    def __del__(self):
-        if self.close_driver == True and self.driver:
-            self.driver.quit()
+    # def __del__(self):
+    #     if self.close_driver == True and self.driver:
+    #         self.driver.quit()
 
     def __setup_driver(self):
 
         options = webdriver.ChromeOptions()
         options.add_argument('--profile-directory=Default')
         options.add_argument("--user-data-dir=chrome-profile/profile_{}".format(self.date))
-        
 
         options.add_argument("disable-infobars")
         options.add_argument("disable-extensions")
@@ -181,7 +178,7 @@ class QantasScrapper:
 
         if self.headless:
 
-            options.headless = True            
+            options.headless = True
             options.add_argument("remote-debugging-port={}".format(get_free_tcp_port()))
             options.add_argument('start-maximized')
 
@@ -258,30 +255,88 @@ class QantasScrapper:
 
     def __enter_place_code(self, type):
 
+        clear_btns = WebDriverWait(self.driver, 5).until(
+            EC.visibility_of_all_elements_located((By.XPATH, '//div[@class="qfa1-typeahead__close-button"]')))
+
         if type == 'src':
             place_code = self.route.split('-')[0]
-            place_input = self.driver.find_element_by_xpath('//input[@id="typeahead-input-from"]')
-            place_input.send_keys(Keys.CONTROL + "a")
-            place_input.send_keys(Keys.DELETE)
-            place_input.send_keys(place_code)
-            sleep(.1)
-            place_opt = self.driver.find_element_by_xpath(
-                '//*[@id="typeahead-list-item-from-list"]//strong[text()="{}"]'.format(place_code))
+            self.log_debug('Entering SRC: ' + place_code)
+
+            self.driver.execute_script("arguments[0].click();", clear_btns[0])
+
+            place_input = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, '//input[@id="typeahead-input-from"]')))
+
+            self.send_keys(place_input, place_code)
+
+            place_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
+                (By.XPATH, '//*[@id="typeahead-list-item-from-list"]//strong[text()="{}"]'.format(place_code))))
+
             place_opt.click()
 
         elif type == "dst":
+
+            #
+            # people_input = WebDriverWait(self.driver, 5).until(
+            #     EC.element_to_be_clickable((By.XPATH, '//input[@class="qfa1-input qfa1-people-selector__input"]')))
+            #
+            # people_count = people_input.get_attribute('value')
+            # self.log_debug('PEOPLE COUNT: ' + people_count)
+            #
+            # self.driver.execute_script("arguments[0].click();", people_input)
+            #
+            # if people_count:
+            #     count = int(people_count.split()[0])
+            #     if count % 2 == 1:
+            #         ppl_plus = WebDriverWait(self.driver, 5).until(
+            #             EC.element_to_be_clickable((By.XPATH, '//div[@class="qfa1-numberpicker__plus-icon"]')))
+            #
+            #         self.driver.execute_script("arguments[0].click();", ppl_plus)
+            #     else:
+            #         ppl_minus = WebDriverWait(self.driver, 5).until(
+            #             EC.element_to_be_clickable((By.XPATH, '//div[@class="qfa1-numberpicker__minus-icon"]')))
+            #         self.driver.execute_script("arguments[0].click();", ppl_minus)
+            #
+            #     btn = WebDriverWait(self.driver, 5).until(
+            #         EC.element_to_be_clickable((By.XPATH, '//button[@class="qfa1-submit-button__button"]')))
+            #
+            #     btn.click()
+
             place_code = self.route.split('-')[1]
-            place_input = self.driver.find_element_by_xpath('//input[@id="typeahead-input-to"]')
-            place_input.send_keys(Keys.CONTROL + "a")
-            place_input.send_keys(Keys.DELETE)
-            place_input.send_keys(place_code)
-            sleep(.1)
-            place_opt = self.driver.find_element_by_xpath(
-                '//*[@id="typeahead-list-item-to-list"]//strong[text()="{}"]'.format(place_code))
+            self.log_debug('Entering DST: ' + place_code)
+
+            self.driver.execute_script("arguments[0].click();", clear_btns[-1])
+
+            place_input = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, '//input[@id="typeahead-input-to"]')))
+
+            self.send_keys(place_input, place_code)
+
+            try:
+                place_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
+                    (By.XPATH, '//*[@id="typeahead-list-item-to-list"]//strong[text()="{}"]'.format(place_code))))
+            except TimeoutException:
+                result_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
+                    (By.XPATH, '//*[@id="typeahead-list-item-to-list"]'.format(place_code))))
+                if "We can't find a matching location for" in result_opt.text:
+                    raise Exception('Invalid Code Used: ' + place_code)
+                else:
+                    raise
+
             place_opt.click()
 
         else:
             raise Exception('Incorrect Place Type')
+
+    def send_keys(self, elem, keys):
+        sleep(.3)
+        for i in range(len(keys)):
+            elem.send_keys(keys[i])
+            sleep(.3)
+
+        if elem.get_attribute('value') != keys:
+            elem.clear()
+            self.send_keys(elem, keys)
 
     def __click_search(self):
 
@@ -291,22 +346,63 @@ class QantasScrapper:
         self.driver.execute_script("arguments[0].click();", src_btn)
 
         try:
-            WebDriverWait(self.driver, 10).until(
+            WebDriverWait(self.driver, 20).until(
                 EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
         except:
 
-            raise Exception('First Fare Type not found: {}'.format(sys.exc_info()[1]))
+            bound = self.driver.find_element_by_tag_name("body")
+            if 'Flights are not available on this date. See other dates above.' in bound.text:
+                self.log_warn("No Flights Available for this date and route.")
+                return
+
+
+            elif 'access denied' in bound.text.lower():
+                raise Exception('Access Denied. Will be retried once at the end.')
+
+
+            elif 'please select at least one passenger' in bound.text.lower():
+                self.log_warn("Clicking search again as passengers were not set.")
+
+                passen_parent_div = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable(
+                        (By.XPATH, '//label[text()="Passengers"]/..')))
+
+                # print(passen_parent_div.get_attribute("outerHTML"))
+
+                people_input = WebDriverWait(passen_parent_div, 5).until(
+                    EC.element_to_be_clickable(
+                        (By.TAG_NAME, 'input')))
+
+                people_count = people_input.get_attribute('value')
+                self.log_debug('PEOPLE COUNT: ' + people_count)
+
+                self.driver.execute_script("arguments[0].click();", people_input)
+
+                ppl_plus = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, '//div[@class="qfa1-numberpicker__plus-icon"]')))
+
+                self.driver.execute_script("arguments[0].click();", ppl_plus)
+
+                btn = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, '//button[@class="qfa1-submit-button__button"]')))
+
+                btn.click()
+
+                self.__click_search()
+                return
+            else:
+                raise Exception('Search Result took more than 30 seconds to load. Will be retried once at the end.')
         else:
             body = self.driver.find_element_by_id('upsell-container-bound0')
             body_html = body.get_attribute("outerHTML")
-            self.log_info('Processing Base Fare Class')
+            self.log_debug('Processing First Result Page')
             self.__save_data(body_html)
 
         extra_fare_classes_names = []
         try:
             extra_fare_classes = self.driver.find_elements_by_xpath('//div[@class="cabin-selector-row"]//button')[1:]
         except:
-            self.log_info('Other Fare Types not found.')
+            self.log_debug('Other Fare Types not found.')
         else:
             for fare_class in extra_fare_classes:
                 extra_fare_classes_names.append(fare_class.text)
@@ -329,10 +425,14 @@ class QantasScrapper:
                 if time() > timeout_start + timeout:
                     break
 
-                new_list = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH,
-                                                    '//div[@class="card-header" or contains(@class,"card-warning")]')))
-                new_txt = new_list.text.strip()
+                try:
+                    new_list = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH,
+                                                        '//div[@class="card-header" or contains(@class,"card-warning")]')))
+                    new_txt = new_list.text.strip()
+                except StaleElementReferenceException as se:
+                    sleep(1)
+                    continue
 
                 if old_txt != new_txt or "We don’t have any seats available, try another cabin class" in new_txt:
                     break
@@ -345,19 +445,18 @@ class QantasScrapper:
                     EC.visibility_of_all_elements_located((By.CSS_SELECTOR, '.e2e-flight-number')))
 
             except:
-                self.log_info('Itinerary Detail not found for: {}'.format(fare_class_name))
+                self.log_info('No seats available for: {}'.format(fare_class_name))
 
             else:
                 body = self.driver.find_element_by_id('upsell-container-bound0')
                 body_html = body.get_attribute("outerHTML")
-                self.log_info('Processing HTML for {}'.format(fare_class_name))
                 self.__save_data(body_html)
 
-        self.log_info('All fare type found.')
+        self.log_info('All fare type processed.')
 
     def __save_data(self, fare_classe_html):
 
-        self.log_info('Extracting info from HTML.')
+        self.log_debug('Extracting info from HTML.')
 
         soup = BeautifulSoup(fare_classe_html, "html.parser")
 
@@ -427,7 +526,6 @@ class QantasScrapper:
         self.driver.get(START_URL)
 
         if self.first_search_done == False:
-            self.log_debug('Entering DATE, SRC and DST.')
             self.__click_one_way()
 
             self.__enter_place_code('src')
@@ -436,7 +534,7 @@ class QantasScrapper:
             self.__click_on_date()
             self.first_search_done = True
         else:
-            self.log_debug('Entering SRC and DST Only')
+
             self.__enter_place_code('src')
             self.__enter_place_code('dst')
 
@@ -446,12 +544,29 @@ class QantasScrapper:
         for self.route in self.routes_list:
 
             try:
-                self.log_info('Search Started')
+                self.log_info('Search Started for {} {}'.format(self.route, self.date))
                 self.__search()
             except:
-                self.driver.save_screenshot("db/{}/error/{}_{}_Error.png".format(self.job_id, self.route, self.date))
-                self.log_exception('Error Processing.')
-                self.errors.append({'route': self.route, 'date': self.date, 'exe': sys.exc_info()[1]})
+                self.save_screenshot("db/{}/error/{}_{}_Error.png".format(self.job_id, self.route, self.date))
+                if not print_trace_back:
+                    self.log_error(sys.exc_info()[1])
+                else:
+                    self.log_exception('Error Processing')
+                self.errors.append({'route': self.route, 'date': self.date, 'exe': str(sys.exc_info()[1])})
+
+        if self.close_driver == True and self.driver:
+            self.driver.quit()
+
+    def save_screenshot(self, path):
+        # Ref: https://stackoverflow.com/a/52572919/
+
+        original_size = self.driver.get_window_size()
+        required_width = self.driver.execute_script('return document.body.parentNode.scrollWidth')
+        required_height = self.driver.execute_script('return document.body.parentNode.scrollHeight')
+        self.driver.set_window_size(required_width, required_height)
+        # driver.save_screenshot(path)  # has scrollbar
+        self.driver.find_element_by_tag_name('body').screenshot(path)  # avoids scrollbar
+        self.driver.set_window_size(original_size['width'], original_size['height'])
 
 
 def scrap(date, routes, job_id):
@@ -471,7 +586,7 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
     job_id = str(job_id)
 
     error_folder = 'db/{}/error'.format(job_id)
-    report_name = 'db/{}/Qantas_Data_{}.xlsx'.format(job_id,job_id)
+    report_name = 'db/{}/Qantas_Data_{}.xlsx'.format(job_id, job_id)
 
     if not os.path.exists(error_folder):
         os.makedirs(error_folder)
@@ -484,13 +599,15 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
     final_res = []
     final_ero = []
-    with concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=parallel_processe_count) as executor:
         future_to_scrappers = {executor.submit(scrap, date, routes, job_id): "{}_{}".format(date, routes) for date in
                                dates}
 
+        completed_count = 0
         for future in concurrent.futures.as_completed(future_to_scrappers):
 
             date_route = future_to_scrappers[future]
+            completed_count += 1
 
             try:
                 data, error = future.result()
@@ -500,12 +617,54 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
                 final_res.extend(data)
                 final_ero.extend(error)
 
-    report_excel_columns = ['Date',	'Departs'	,'Dep Time'	,'Arrives',	'Arr Time',	'Stops',	'Flight']
+            log.info('===== PERCENT COMPLETE: ' + str((completed_count * 100) / len(dates)))
+
+    if len(final_ero) > 0:
+
+        retied_final_erros = []
+
+        new_jobs = {}
+
+        for err in final_ero:
+            if 'Invalid Code Used' not in err.get('exe'):
+                if new_jobs.get(err.get('date')):
+                    new_jobs.get(err.get('date')).append(err.get('route'))
+                else:
+                    new_jobs.update({err.get('date'): [err.get('route')]})
+
+            else:
+                retied_final_erros.append(err)
+
+        if len(new_jobs) > 1:
+            log.info('##### RETRYING FAILED ROUTES ONLY ONCE')
+
+            with concurrent.futures.ProcessPoolExecutor(max_workers=parallel_processe_count) as executor:
+
+                future_to_scrappers = {executor.submit(scrap, date, routes, job_id): "{}_{}".format(date, routes) for
+                                       date, routes
+                                       in
+                                       new_jobs.items()}
+
+                for future in concurrent.futures.as_completed(future_to_scrappers):
+
+                    date_route = future_to_scrappers[future]
+
+                    try:
+                        data, error = future.result()
+                    except Exception as exc:
+                        log.error('%r generated an exception: %s' % (date_route, exc), exc_info=True)
+                    else:
+                        final_res.extend(data)
+                        retied_final_erros.extend(error)
+
+        final_ero = retied_final_erros
+
+    report_excel_columns = ['Date', 'Departs', 'Dep Time', 'Arrives', 'Arr Time', 'Stops', 'Flight']
     for fare_type in fare_type_list:
         report_excel_columns.append(fare_name_tmpl.format(fare_type))
 
-    write_to_excel(report_name, final_res,final_ero,
-                   report_excel_columns,['route', 'date', 'exe'])
+    write_to_excel(report_name, final_res, final_ero,
+                   report_excel_columns, ['route', 'date', 'exe'])
 
     # write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, )
 

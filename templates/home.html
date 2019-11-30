@@ -256,12 +256,13 @@ save_btn.onclick = function(e) {
     var str = document.getElementById("new_routes").value;
     var new_routes = str.split(",");
 
-    new_routes.forEach(function (value, i) {
+    let unique = [...new Set(new_routes)];
 
-    existing_list = existing_list + '<li>'+ value +' <button id="'+value+'" type="button" onclick="remove(event)">Remove</button></li><br>';
-
-
-});
+    unique.forEach(function (value, i) {
+    if (value !== null && value.trim() !== ''){
+    value = value.trim();
+    existing_list = existing_list + '<li>'+ value +' <button id="'+value+'" type="button" onclick="remove(event)">Remove</button></li><br>';}
+        });
 
     document.getElementById("myList").innerHTML = existing_list;
 
