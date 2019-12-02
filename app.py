@@ -1,4 +1,5 @@
 import logging
+import numbers
 import os,shutil
 logging.basicConfig(format='%(levelname)s --> %(message)s', level=logging.INFO)
 
@@ -29,6 +30,7 @@ def home():
 
 @app.route('/start', methods=['POST'])
 def start():
+
     if scrapper.is_job_running():
         return jsonify(isError=True,
                        data='Job Already Running. Please wait for it to finish.'), 200
@@ -37,14 +39,31 @@ def start():
     end_day = request.json.get('end_day')
     routes = request.json.get('routes')
 
+    if not start_day or not end_day:
+        return jsonify(isError=True,
+                       data='Please enter both start day and end day'), 200
+
+
+    try:
+        start_day = int(start_day)
+        end_day = int(end_day)
+    except TypeError:
+        return jsonify(isError=True,
+                       data='Start day and/or End day entered are not integers. Please enter integer values.'), 200
+
+
+    if start_day>=end_day:
+        return jsonify(isError=True,
+                       data='Start day cannot be greater than or equal to end day. Please enter valid values.'), 200
+
     # print( request.form)
     # print(request.json)
     job_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    thread1 = threading.Thread(target=scrapper.run, args=(routes, int(start_day), int(end_day)),
+    thread1 = threading.Thread(target=scrapper.run, args=(routes, start_day, end_day),
                                kwargs={'job_id': job_id})
     thread1.start()
 
-    print(start_day, end_day, routes)
+    # print(start_day, end_day, routes)
 
     return jsonify(isError=False,
                    jobId=job_id,
@@ -54,6 +73,6 @@ def start():
 if __name__ == '__main__':
     from waitress import serve
 
-    serve(app, listen='*:5010')
+    serve(app, listen='*:5000')
 
     # app.run(debug=True)

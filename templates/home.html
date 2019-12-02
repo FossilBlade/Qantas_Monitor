@@ -161,7 +161,7 @@ body {font-family: Arial, Helvetica, sans-serif;}
                 if (result.isError == false){
                 $("#result").html("<h2>"+result.data+"</h2><p>JOB ID: "+result.jobId+"</p>");}
                 else{
-                $("#result").html("<h2>ERROR</h2><p>"+result.data+"</p>");
+                $("#result").html('<h2 style="color:red;">ERROR</h2><p style="color:red;">'+result.data+"</p>");
                 }
 
         },

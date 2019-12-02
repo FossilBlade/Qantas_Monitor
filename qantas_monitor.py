@@ -27,7 +27,7 @@ import multiprocessing
 
 from email_sender import send_mail
 from config import email_to_send_report, close_chrome_after_complete, headless, send_email, parallel_processe_count, \
-    print_trace_back,auto_retry_count
+    print_trace_back, auto_retry_count
 
 import socket
 
@@ -138,9 +138,9 @@ class QantasScrapper:
     def log_debug(self, msg):
         log.debug('[{}/{}] - {}'.format(self.date, self.route, msg))
 
-    # def __del__(self):
-    #     if self.close_driver == True and self.driver:
-    #         self.driver.quit()
+    def __del__(self):
+        if self.close_driver == True and self.driver:
+            self.driver.quit()
 
     def __setup_driver(self):
 
@@ -238,11 +238,9 @@ class QantasScrapper:
             oneway = self.driver.find_element_by_xpath('//*[@id="oneway"]')
             self.driver.execute_script("arguments[0].click();", oneway)
         except:
-
             try:
                 old_form_link = self.driver.find_element_by_xpath(
                     "//p[contains(text(),'still working through the accessibility functionality of this form')]//a")
-
 
                 self.log_debug('Different view Detected. Try to go to base view.')
                 self.driver.get(old_form_link.get_attribute('href'))
@@ -251,8 +249,6 @@ class QantasScrapper:
                 self.driver.execute_script("arguments[0].click();", oneway)
             except:
                 raise Exception("Start page did not load properly. Can't find expected elements.")
-
-
 
     def __enter_place_code(self, type):
 
@@ -276,8 +272,6 @@ class QantasScrapper:
             place_opt.click()
 
         elif type == "dst":
-
-
 
             place_code = self.route.split('-')[1]
             self.log_debug('Entering DST: ' + place_code)
@@ -449,7 +443,7 @@ class QantasScrapper:
 
             segments = row.findAll('upsell-segment-details')
             if len(segments) == 0:
-                self.log_error("Couldn't find segment(Row Count: {}): \n{}".format(len(summary_rows), row.prettify()))
+                self.log_debug("Couldn't find segment(Row Count: {}): \n{}".format(len(summary_rows), row.prettify()))
                 continue
 
             src_label = segments[0].find("span", {"class": "textual-label"})
@@ -553,8 +547,6 @@ class QantasScrapper:
 
 
 def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counter=1):
-
-
     # if called_counter > auto_retry_count:
     #     return
     #
@@ -575,7 +567,6 @@ def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counte
         else:
             full_error.append(err)
 
-
     if called_counter > auto_retry_count:
         full_error.extend(removed_error)
         return
@@ -583,9 +574,9 @@ def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counte
     called_counter += 1
 
     if len(retry_routes) > 1:
-
-        log.info('##### RETRYING FAILED ROUTES: ' + str(retry_routes))
-        scrap_retry(scrapper.errors[0].get('date'), retry_routes, job_id, full_data=full_data, full_error=full_error,called_counter=called_counter)
+        log.info('##### RETRYING FAILED ROUTES FOR {} : {}'.format(date, retry_routes))
+        scrap_retry(date, retry_routes, job_id, full_data=full_data, full_error=full_error,
+                    called_counter=called_counter)
 
 
 def scrap(date, routes, job_id):
@@ -613,9 +604,12 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
     if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
         shutil.rmtree('chrome-profile')
-
+    log.info('Getting Date range for days: {} - {}'.format(start_day,end_day))
     dates = get_date_range(start_day, end_day)
-    routes = list(set(routes))
+    # remove duplicates and maintaine order
+    routes = list(dict.fromkeys(routes))
+
+    log.info("Processing following routes and dates:\nRoutes: {}\nDates: {}".format(routes,dates))
 
     final_res = []
     final_ero = []
