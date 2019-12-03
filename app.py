@@ -1,15 +1,5 @@
 import logging
-import numbers
-import os,shutil
 logging.basicConfig(format='%(levelname)s --> %(message)s', level=logging.INFO)
-
-from flask import Flask, render_template, request, jsonify
-import threading
-import qantas_monitor as scrapper
-import datetime
-
-app = Flask(__name__)
-
 rootlog = logging.getLogger('werkzeug')
 rootlog.setLevel(logging.ERROR)
 
@@ -18,6 +8,20 @@ rootlog.setLevel(logging.ERROR)
 
 rootlog = logging.getLogger('urllib3')
 rootlog.setLevel(logging.ERROR)
+
+
+
+import os,shutil
+
+
+from flask import Flask, render_template, request, jsonify
+import threading
+import qantas_monitor as scrapper
+import datetime
+
+app = Flask(__name__)
+
+
 
 if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
     print('DELETE CACHED FOLDER')
