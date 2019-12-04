@@ -383,7 +383,7 @@ class QantasScrapper:
 
 
             elif 'access denied' in bound.text.lower():
-
+                self.clear_cache()
                 raise Exception('Access Denied. Will be retried at the end.')
 
 
@@ -550,7 +550,7 @@ class QantasScrapper:
 
     def __search(self):
         # sleep(30)
-        self.clear_cache()
+        # self.clear_cache()
         self.log_info('Search Started for {} {}'.format(self.route, self.date))
         self.driver.get(START_URL)
 
@@ -591,7 +591,6 @@ class QantasScrapper:
                     self.log_exception('Error Processing')
                 self.errors.append({'route': self.route, 'date': self.date, 'exe': str(sys.exc_info()[1])})
 
-            # finally:
         self.close_driver_and_delete_profile()
 
     # def get_route_data(self):
@@ -615,19 +614,22 @@ class QantasScrapper:
             self.driver.close()
             self.driver_is_open = False
 
-        if os.path.exists("chrome-profile/profile_{}".format(self.date)) and os.path.isdir("chrome-profile/profile_{}".format(self.date)):
-            shutil.rmtree("chrome-profile/profile_{}".format(self.date))
+        # if os.path.exists("chrome-profile/profile_{}".format(self.date)) and os.path.isdir("chrome-profile/profile_{}".format(self.date)):
+        #     shutil.rmtree("chrome-profile/profile_{}".format(self.date))
 
     def save_screenshot(self, path):
         # Ref: https://stackoverflow.com/a/52572919/
+        try:
+            original_size = self.driver.get_window_size()
+            required_width = self.driver.execute_script('return document.body.parentNode.scrollWidth')
+            required_height = self.driver.execute_script('return document.body.parentNode.scrollHeight')
 
-        original_size = self.driver.get_window_size()
-        required_width = self.driver.execute_script('return document.body.parentNode.scrollWidth')
-        required_height = self.driver.execute_script('return document.body.parentNode.scrollHeight')
-        self.driver.set_window_size(required_width, required_height)
-        # driver.save_screenshot(path)  # has scrollbar
-        self.driver.find_element_by_tag_name('body').screenshot(path)  # avoids scrollbar
-        self.driver.set_window_size(original_size['width'], original_size['height'])
+            self.driver.set_window_size(required_width, required_height)
+            # driver.save_screenshot(path)  # has scrollbar
+            self.driver.find_element_by_tag_name('body').screenshot(path)  # avoids scrollbar
+            self.driver.set_window_size(original_size['width'], original_size['height'])
+        except:
+            self.driver.screenshot(path)
 
 
 def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counter=1):
@@ -656,7 +658,7 @@ def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counte
 
     if len(retry_routes) > 0:
         log.info('##### RETRYING FAILED ROUTES FOR {} : {}'.format(date, retry_routes))
-        scrap_retry(date, retry_routes[0], job_id, full_data=full_data, full_error=full_error,
+        scrap_retry(date, retry_routes, job_id, full_data=full_data, full_error=full_error,
                     called_counter=called_counter)
 
 def scrap(date, routes, job_id):
