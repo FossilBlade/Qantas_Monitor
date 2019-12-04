@@ -9,7 +9,7 @@ from selenium.common.exceptions import TimeoutException, StaleElementReferenceEx
 from selenium.webdriver.chrome.options import DesiredCapabilities
 from selenium.webdriver.common.proxy import Proxy, ProxyType
 import sys
-
+from random import shuffle
 from time import sleep, time as timestamp
 from bs4 import BeautifulSoup
 from traceback import print_exc
@@ -107,17 +107,17 @@ def get_date_range(start_day, end_day):
 
 class QantasScrapper:
 
-    def __init__(self, date, route, headless=True, close_driver=True, job_id=0):
+    def __init__(self, date, routes_list, headless=True, close_driver=True, job_id=0):
         self.driver_is_open = False
         self.all_fare_body_htmls = []
         self.first_search_done = False
         self.driver = None
-        self.route = route
+        self.route = None
         self.results = []
         self.errors = []
         self.close_driver = close_driver
         self.headless = headless
-        # self.routes_list = routes_list
+        self.routes_list = routes_list
         self.date = date
         self.__setup_driver()
         self.job_id = job_id
@@ -140,22 +140,20 @@ class QantasScrapper:
         log.debug('[{}/{}] - {}'.format(self.date, self.route, msg))
 
     def __del__(self):
-        if self.close_driver == True and self.driver and self.driver_is_open:
-            self.driver.close()
-            self.driver_is_open = False
+        self.close_driver_and_delete_profile()
 
     def __setup_driver(self):
 
         options = webdriver.ChromeOptions()
         options.add_argument('--profile-directory=Default')
-        options.add_argument("--user-data-dir=chrome-profile/profile_{}_{}".format(self.date,self.route))
+        options.add_argument("--user-data-dir=chrome-profile/profile_{}".format(self.date))
 
         options.add_argument("disable-infobars")
         options.add_argument("disable-extensions")
         options.add_argument("disable-cache")
         options.add_argument("disk-cache-size=1")
         # options.add_argument("incognito")
-        options.add_argument('lang=en_US')
+        # options.add_argument('lang=en_US')
 
         options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
         options.add_experimental_option('useAutomationExtension', False)
@@ -192,7 +190,7 @@ class QantasScrapper:
             self.driver = webdriver.Chrome(options=options, desired_capabilities=None)
 
         self.driver_is_open = True
-        self.driver.minimize_window()
+        # self.driver.minimize_window()
         self.driver.set_page_load_timeout(page_load_timeout)
 
     def expand_shadow_element(self,element):
@@ -237,14 +235,14 @@ class QantasScrapper:
 
         self.get_clear_browsing_button().click()
 
-        # timeout = 15
-        # timeout_start = timestamp()
-        #
-        # while self.driver.current_url != 'chrome://settings/':
-        #     if timestamp() > timeout_start + timeout:
-        #         self.log_warn('Timed-out waiting for browser clear history')
-        #         break
-        #     sleep(.5)
+        timeout = 60
+        timeout_start = timestamp()
+
+        while self.driver.current_url != 'chrome://settings/':
+            if timestamp() > timeout_start + timeout:
+                self.log_warn('Timed-out waiting for browser clear history')
+                break
+            sleep(.5)
 
     def __process_displayed_months(self, day, mon_name, year):
         tables = self.driver.find_elements_by_xpath(
@@ -562,7 +560,7 @@ class QantasScrapper:
         self.__enter_place_code('dst')
 
         self.__click_on_date()
-        self.first_search_done = True
+        # self.first_search_done = True
 
         # if self.first_search_done == False:
         #     self.__click_one_way()
@@ -593,26 +591,32 @@ class QantasScrapper:
                     self.log_exception('Error Processing')
                 self.errors.append({'route': self.route, 'date': self.date, 'exe': str(sys.exc_info()[1])})
 
-        if self.close_driver == True and self.driver:
-            self.driver.quit()
+            # finally:
+        self.close_driver_and_delete_profile()
 
-    def get_route_data(self):
+    # def get_route_data(self):
+    #
+    #     # self.route  = route
+    #
+    #     try:
+    #         self.__search()
+    #     except:
+    #         self.save_screenshot("db/{}/error/{}_{}_Error.png".format(self.job_id, self.route, self.date))
+    #         if not print_trace_back:
+    #             self.log_error(sys.exc_info()[1])
+    #         else:
+    #             self.log_exception('Error Processing')
+    #         self.errors.append({'route': self.route, 'date': self.date, 'exe': str(sys.exc_info()[1])})
+    #     finally:
+    #         self.close_driver_and_delete_profile()
 
-        # self.route  = route
+    def close_driver_and_delete_profile(self):
+        if self.close_driver == True and self.driver and self.driver_is_open:
+            self.driver.close()
+            self.driver_is_open = False
 
-        try:
-            self.__search()
-        except:
-            self.save_screenshot("db/{}/error/{}_{}_Error.png".format(self.job_id, self.route, self.date))
-            if not print_trace_back:
-                self.log_error(sys.exc_info()[1])
-            else:
-                self.log_exception('Error Processing')
-            self.errors.append({'route': self.route, 'date': self.date, 'exe': str(sys.exc_info()[1])})
-        finally:
-            if self.close_driver == True and self.driver and self.driver_is_open:
-                self.driver.close()
-                self.driver_is_open = False
+        if os.path.exists("chrome-profile/profile_{}".format(self.date)) and os.path.isdir("chrome-profile/profile_{}".format(self.date)):
+            shutil.rmtree("chrome-profile/profile_{}".format(self.date))
 
     def save_screenshot(self, path):
         # Ref: https://stackoverflow.com/a/52572919/
@@ -629,8 +633,8 @@ class QantasScrapper:
 def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counter=1):
 
     scrapper = QantasScrapper(date, routes, job_id=job_id, headless=headless, close_driver=close_chrome_after_complete)
-    # scrapper.loop_over_routes()
-    scrapper.get_route_data()
+    scrapper.loop_over_routes()
+    # scrapper.get_route_data()
 
     full_data.extend(scrapper.results)
 
@@ -650,9 +654,9 @@ def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counte
 
     called_counter += 1
 
-    if len(retry_routes) > 1:
+    if len(retry_routes) > 0:
         log.info('##### RETRYING FAILED ROUTES FOR {} : {}'.format(date, retry_routes))
-        scrap_retry(date, retry_routes, job_id, full_data=full_data, full_error=full_error,
+        scrap_retry(date, retry_routes[0], job_id, full_data=full_data, full_error=full_error,
                     called_counter=called_counter)
 
 def scrap(date, routes, job_id):
@@ -688,9 +692,14 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
     final_res = []
     final_ero = []
+
+
+    shuffle(dates)
+
+    log.info("Shuffled Dates: \n{}".format(dates))
     with concurrent.futures.ProcessPoolExecutor(max_workers=parallel_processe_count) as executor:
-        for route in routes:
-            future_to_scrappers = {executor.submit(scrap, date, route, job_id): "{}_{}".format(date, route) for date in
+
+        future_to_scrappers = {executor.submit(scrap, date, routes, job_id): "{}_{}".format(date, routes) for date in
                                    dates}
 
         completed_count = 0
@@ -740,7 +749,7 @@ if __name__ == '__main__':
     rootlog = logging.getLogger('urllib3')
     rootlog.setLevel(logging.ERROR)
 
-    routes = ['SYD-CAN','MEL-DEL']  # , 'SYD-MEL'
+    routes = ['SYD-CAN']  # , 'SYD-MEL'
 
 
     run(routes, 3,4)
