@@ -52,7 +52,7 @@ START_URL = 'https://www.qantas.com/au/en/book-a-trip/flights.html'
 fare_type_list = ['red_e-deal', 'flex', 'business', 'business_classic_reward',
                   'economy_classic_reward', 'sale', 'saver',
                   'premium_economy_sale',
-                  'premium_economy_flex', 'first_saver',
+                  'premium_economy_flex', 'first_saver', 'first_sale',
                   'first_flex', 'business_saver', 'business_flex',
                   'premium_economy_saver', 'business_sale',
                   'premium_economy_classic_reward', 'first_classic_reward']
@@ -121,7 +121,6 @@ class QantasScrapper:
         self.date = date
         self.__setup_driver()
         self.job_id = job_id
-
 
     def log_info(self, msg):
         log.info('[{}/{}] - {}'.format(self.date, self.route, msg))
@@ -193,10 +192,9 @@ class QantasScrapper:
         # self.driver.minimize_window()
         self.driver.set_page_load_timeout(page_load_timeout)
 
-    def expand_shadow_element(self,element):
+    def expand_shadow_element(self, element):
         shadow_root = self.driver.execute_script('return arguments[0].shadowRoot', element)
         return shadow_root
-
 
     def get_clear_browsing_button(self):
         """Find the "CLEAR BROWSING BUTTON" on the Chrome settings page."""
@@ -225,7 +223,6 @@ class QantasScrapper:
         search_button = root6.find_element_by_id("clearBrowsingDataConfirm")
 
         return search_button
-
 
     def clear_cache(self, timeout=60):
         self.log_info('Clearing the cookies and cache for the ChromeDriver instance.')
@@ -581,10 +578,10 @@ class QantasScrapper:
         for self.route in self.routes_list:
 
             try:
-
                 self.__search()
             except:
-                self.save_screenshot("db/{}/error/{}_{}_Error.png".format(self.job_id, self.route, self.date))
+                if 'Invalid Code Used' not in str(sys.exc_info()[1]):
+                    self.save_screenshot("db/{}/error/{}_{}_Error.png".format(self.job_id, self.route, self.date))
                 if not print_trace_back:
                     self.log_error(sys.exc_info()[1])
                 else:
@@ -593,29 +590,10 @@ class QantasScrapper:
 
         self.close_driver_and_delete_profile()
 
-    # def get_route_data(self):
-    #
-    #     # self.route  = route
-    #
-    #     try:
-    #         self.__search()
-    #     except:
-    #         self.save_screenshot("db/{}/error/{}_{}_Error.png".format(self.job_id, self.route, self.date))
-    #         if not print_trace_back:
-    #             self.log_error(sys.exc_info()[1])
-    #         else:
-    #             self.log_exception('Error Processing')
-    #         self.errors.append({'route': self.route, 'date': self.date, 'exe': str(sys.exc_info()[1])})
-    #     finally:
-    #         self.close_driver_and_delete_profile()
-
     def close_driver_and_delete_profile(self):
         if self.close_driver == True and self.driver and self.driver_is_open:
             self.driver.close()
             self.driver_is_open = False
-
-        # if os.path.exists("chrome-profile/profile_{}".format(self.date)) and os.path.isdir("chrome-profile/profile_{}".format(self.date)):
-        #     shutil.rmtree("chrome-profile/profile_{}".format(self.date))
 
     def save_screenshot(self, path):
         # Ref: https://stackoverflow.com/a/52572919/
@@ -629,14 +607,16 @@ class QantasScrapper:
             self.driver.find_element_by_tag_name('body').screenshot(path)  # avoids scrollbar
             self.driver.set_window_size(original_size['width'], original_size['height'])
         except:
-            self.driver.screenshot(path)
+
+            try:
+                self.driver.save_screenshot(path)
+            except:
+                self.log_warn('Could not take a snapshot of the error page')
 
 
 def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counter=1):
-
     scrapper = QantasScrapper(date, routes, job_id=job_id, headless=headless, close_driver=close_chrome_after_complete)
     scrapper.loop_over_routes()
-    # scrapper.get_route_data()
 
     full_data.extend(scrapper.results)
 
@@ -661,11 +641,13 @@ def scrap_retry(date, routes, job_id, full_data=[], full_error=[], called_counte
         scrap_retry(date, retry_routes, job_id, full_data=full_data, full_error=full_error,
                     called_counter=called_counter)
 
+
 def scrap(date, routes, job_id):
     full_data = []
     full_error = []
     scrap_retry(date, routes, job_id, full_data=full_data, full_error=full_error)
     return full_data, full_error
+
 
 def is_job_running():
     if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
@@ -685,40 +667,25 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
 
     if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
         shutil.rmtree('chrome-profile')
-    log.info('Getting Date range for days: {} - {}'.format(start_day,end_day))
+    log.info('Getting Date range for days: {} - {}'.format(start_day, end_day))
     dates = get_date_range(start_day, end_day)
     # remove duplicates and maintaine order
     routes = list(dict.fromkeys(routes))
 
-    log.info("Processing following routes and dates:\nRoutes: {}\nDates: {}".format(routes,dates))
-
     final_res = []
     final_ero = []
 
-
     shuffle(dates)
+    shuffle(routes)
 
-    log.info("Shuffled Dates: \n{}".format(dates))
-    with concurrent.futures.ProcessPoolExecutor(max_workers=parallel_processe_count) as executor:
-
-        future_to_scrappers = {executor.submit(scrap, date, routes, job_id): "{}_{}".format(date, routes) for date in
-                                   dates}
-
-        completed_count = 0
-        for future in concurrent.futures.as_completed(future_to_scrappers):
-
-            date_route = future_to_scrappers[future]
-            completed_count += 1
-
-            try:
-                data, error = future.result()
-            except Exception as exc:
-                log.error('%r generated an exception: %s' % (date_route, exc), exc_info=True)
-            else:
-                final_res.extend(data)
-                final_ero.extend(error)
-
-            log.info('===== PERCENT COMPLETE: ' + str((completed_count * 100) / len(dates)))
+    log.info("Processing following routes and dates:\nRoutes: {}\nDates: {}".format(routes, dates))
+    completed_count = 0
+    for date in dates:
+        data, error = scrap(date, routes, job_id)
+        final_res.extend(data)
+        final_ero.extend(error)
+        completed_count += 1
+        log.info('===== PERCENT COMPLETE: ' + str((completed_count * 100) / len(dates)))
 
     report_excel_columns = ['Date', 'Departs', 'Dep Time', 'Arrives', 'Arr Time', 'Stops', 'Flight']
     for fare_type in fare_type_list:
@@ -753,7 +720,6 @@ if __name__ == '__main__':
 
     routes = ['SYD-CAN']  # , 'SYD-MEL'
 
-
-    run(routes, 3,4)
+    run(routes, 3, 4)
 
     print("Completed")

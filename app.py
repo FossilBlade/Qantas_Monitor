@@ -16,7 +16,7 @@ import os,shutil
 
 from flask import Flask, render_template, request, jsonify
 import threading
-import qantas_monitor as scrapper
+import qantas_monitor_single as scrapper
 import datetime
 
 app = Flask(__name__)
