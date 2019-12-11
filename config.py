@@ -1,6 +1,6 @@
 
 email_to_send_report = 'ryrwxvx@gmail.com'
-auto_retry_count = 1
+auto_retry_count = 10
 
 send_email = True
 close_chrome_after_complete=True

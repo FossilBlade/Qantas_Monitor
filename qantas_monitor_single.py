@@ -1,29 +1,20 @@
 from selenium import webdriver
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.keys import Keys
+
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import os
 import shutil
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
-from selenium.webdriver.chrome.options import DesiredCapabilities
-from selenium.webdriver.common.proxy import Proxy, ProxyType
+
 import sys
 from random import shuffle
 from time import sleep, time as timestamp
 from bs4 import BeautifulSoup
-from traceback import print_exc
 
-import json
 import datetime
 
 import pandas as pd
-
-import random
-
-import concurrent.futures
-
-import multiprocessing
 
 from email_sender import send_mail
 from config import email_to_send_report, close_chrome_after_complete, headless, send_email, parallel_processe_count, \
@@ -41,13 +32,6 @@ import chromedriver_binary  # Adds chromedriver binary to path
 page_load_timeout = 60
 
 START_URL = 'https://www.qantas.com/au/en/book-a-trip/flights.html'
-# user_agent_list = [
-#     # Chrome
-#     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
-#     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
-#     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.70 Safari/537.36',
-#
-# ]
 
 fare_type_list = ['red_e-deal', 'flex', 'business', 'business_classic_reward',
                   'economy_classic_reward', 'sale', 'saver',
@@ -506,8 +490,11 @@ class QantasScrapper:
 
             dst_labels = segments[-1].findAll("span", {"class": "textual-label"})
             dst = dst_labels[-1].getText().strip()
-            dst_time_div_row = segments[-1].findAll("div", {"class": "row"})
-            dst_time_div = dst_time_div_row[1].findAll("div")[-1]
+            # dst_time_div_row = segments[-1].findAll("div", {"class": "row"})
+            # dst_time_div = dst_time_div_row[-2].findAll("div")[-1]
+            # dst_time = " ".join(dst_time_div.getText().strip().split())
+            div_arr_dep = segments[-1].find("div", {"class": "departure-arrival-time"})
+            dst_time_div = div_arr_dep.find("div", {"class": "text-right"})
             dst_time = " ".join(dst_time_div.getText().strip().split())
 
             flight_no_span = row.find("span", {"class": "e2e-flight-number"})
@@ -546,8 +533,7 @@ class QantasScrapper:
                 flight_detail.update({fare_name_tmpl.format(fare_final_name): amt})
 
     def __search(self):
-        # sleep(30)
-        # self.clear_cache()
+
         self.log_info('Search Started for {} {}'.format(self.route, self.date))
         self.driver.get(START_URL)
 
@@ -557,20 +543,6 @@ class QantasScrapper:
         self.__enter_place_code('dst')
 
         self.__click_on_date()
-        # self.first_search_done = True
-
-        # if self.first_search_done == False:
-        #     self.__click_one_way()
-        #
-        #     self.__enter_place_code('src')
-        #     self.__enter_place_code('dst')
-        #
-        #     self.__click_on_date()
-        #     self.first_search_done = True
-        # else:
-        #
-        #     self.__enter_place_code('src')
-        #     self.__enter_place_code('dst')
 
         self.__click_search()
 
