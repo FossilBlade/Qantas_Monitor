@@ -300,7 +300,7 @@ class QantasScrapper:
             place_input = WebDriverWait(self.driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, '//input[@id="typeahead-input-from"]')))
 
-            self.send_keys(place_input, place_code)
+            self.send_keys(place_input, place_code,clear_btns[0])
 
             place_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
                 (By.XPATH, '//*[@id="typeahead-list-item-from-list"]//strong[text()="{}"]'.format(place_code))))
@@ -317,7 +317,7 @@ class QantasScrapper:
             place_input = WebDriverWait(self.driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, '//input[@id="typeahead-input-to"]')))
 
-            self.send_keys(place_input, place_code)
+            self.send_keys(place_input, place_code,clear_btns[-1])
 
             try:
                 place_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
@@ -335,14 +335,15 @@ class QantasScrapper:
         else:
             raise Exception('Incorrect Place Type')
 
-    def send_keys(self, elem, keys):
+    def send_keys(self, elem, keys,clear_btn):
         sleep(.1)
         for i in range(len(keys)):
             elem.send_keys(keys[i])
             sleep(.1)
 
         if elem.get_attribute('value') != keys:
-            elem.clear()
+            # elem.clear()
+            self.driver.execute_script("arguments[0].click();", clear_btn)
             self.send_keys(elem, keys)
 
     def __click_search(self):
@@ -647,8 +648,8 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
     final_res = []
     final_ero = []
 
-    shuffle(dates)
-    shuffle(routes)
+    # shuffle(dates)
+    # shuffle(routes)
 
     log.info("Processing following routes and dates:\nRoutes: {}\nDates: {}".format(routes, dates))
     completed_count = 0
