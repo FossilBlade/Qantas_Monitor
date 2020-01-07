@@ -6,12 +6,12 @@ from selenium.webdriver.common.by import By
 import os
 import shutil
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
-
+import xlrd
 import sys
 from random import shuffle
 from time import sleep, time as timestamp
 from bs4 import BeautifulSoup
-
+import json
 import datetime
 
 import pandas as pd
@@ -43,6 +43,7 @@ fare_type_list = ['red_e-deal', 'flex', 'business', 'business_classic_reward',
 
 fare_name_tmpl = '{} Fare'
 
+report_name_template ='db/{}/Qantas_Data_{}.xlsx'
 
 def get_free_tcp_port():
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -302,8 +303,16 @@ class QantasScrapper:
 
             self.send_keys(place_input, place_code,clear_btns[0])
 
-            place_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
+            try:
+                place_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
                 (By.XPATH, '//*[@id="typeahead-list-item-from-list"]//strong[text()="{}"]'.format(place_code))))
+            except:
+                result_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
+                    (By.XPATH, '//*[@id="typeahead-list-item-from-list"]'.format(place_code))))
+                if "We can't find a matching location for" in result_opt.text:
+                    raise Exception('Invalid Code Used: ' + place_code)
+                else:
+                    raise
 
             place_opt.click()
 
@@ -320,10 +329,10 @@ class QantasScrapper:
             self.send_keys(place_input, place_code,clear_btns[-1])
 
             try:
-                place_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
+                place_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
                     (By.XPATH, '//*[@id="typeahead-list-item-to-list"]//strong[text()="{}"]'.format(place_code))))
             except TimeoutException:
-                result_opt = WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable(
+                result_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
                     (By.XPATH, '//*[@id="typeahead-list-item-to-list"]'.format(place_code))))
                 if "We can't find a matching location for" in result_opt.text:
                     raise Exception('Invalid Code Used: ' + place_code)
@@ -628,12 +637,18 @@ def is_job_running():
     else:
         return False
 
+def does_job_exists(job_id):
+    if os.path.exists('db/{}/Qantas_Data_{}.xlsx'.format(job_id, job_id)) :
+        return True
+    else:
+        return False
+
 
 def run(routes: list, start_day: int, end_day: int, job_id=0):
     job_id = str(job_id)
 
     error_folder = 'db/{}/error'.format(job_id)
-    report_name = 'db/{}/Qantas_Data_{}.xlsx'.format(job_id, job_id)
+    report_name = report_name_template.format(job_id, job_id)
 
     if not os.path.exists(error_folder):
         os.makedirs(error_folder)
@@ -678,6 +693,107 @@ def run(routes: list, start_day: int, end_day: int, job_id=0):
         shutil.rmtree('chrome-profile')
 
 
+def update_excel(excel_path, data_list, error_list, data_column_list, error_column_list):
+    if (data_list == None or len(data_list) == 0) and (error_list == None or len(error_list) == 0):
+        log.info('No Data for Updating Excel')
+        return
+
+    writer = pd.ExcelWriter(excel_path, engine='xlsxwriter', options={'strings_to_urls': False})
+
+    if data_list == None or len(data_list) == 0:
+        log.info('Data List empty for updating Excel.')
+    else:
+        prevlen = len(data_list[0])
+        for data in data_list:
+            if prevlen != len(data):
+                log.warning("LENGTH NOT SAME")
+                log.warning(str(prevlen))
+                log.warning(str(data))
+            prevlen = len(data)
+        log.debug('Creating Data Sheet')
+        new_data_df = pd.pandas.DataFrame.from_dict(data_list, dtype=str)
+        try:
+            old_data_df = pd.read_excel(excel_path,sheet_name='Result')
+            result = pd.concat([old_data_df, new_data_df], ignore_index=True)
+        except xlrd.biffh.XLRDError as e:
+            if 'No sheet named' in str(e):
+                result = new_data_df
+
+        result.to_excel(writer, columns=data_column_list, sheet_name='Result', index=False)
+
+    if error_list == None or len(error_list) == 0:
+        log.info('Error List empty for updating Excel.')
+    else:
+
+        log.debug('Updating Error Sheet Excel')
+        new_error_df = pd.pandas.DataFrame.from_dict(error_list, dtype=str)
+        new_error_df.to_excel(writer, columns=error_column_list, sheet_name='Errors', index=False)
+
+    writer.close()
+    log.info('Excel Updated at :' + os.path.abspath(excel_path))
+
+
+def read_failed_sheet(job_id):
+    report_name = report_name_template.format(job_id, job_id)
+    try:
+        df = pd.read_excel(report_name, sheet_name='Errors')
+    except xlrd.biffh.XLRDError as e:
+        if 'No sheet named' in str(e):
+            return {}
+    df = df[~df.exe.astype(str).str.contains("Invalid Code Used")]
+    # df = df[~df['exe'].str.contains('Invalid Code Used', na=True)]
+    data = df.groupby('date')['route'].apply(list).to_dict()
+    return data
+
+
+def run_error(job_id):
+    job_id = str(job_id)
+
+    log.info("Retrying Job Id: "+ job_id)
+
+    error_folder = 'db/{}/error'.format(job_id)
+    report_name = report_name_template.format(job_id, job_id)
+
+    if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
+        shutil.rmtree('chrome-profile')
+
+    log.info('Getting Failed Dates and Routes from File: {}'.format(report_name))
+
+    failed_recs = read_failed_sheet(job_id)
+
+    final_res = []
+    final_ero = []
+
+    # shuffle(dates)
+    # shuffle(routes)
+
+    log.info("Processing following failed routes and dates:\n{}".format(json.dumps(failed_recs, indent=2)))
+    completed_count = 0
+    for date, routes in failed_recs.items():
+        data, error = scrap(date, routes, job_id)
+        final_res.extend(data)
+        final_ero.extend(error)
+        completed_count += 1
+        log.info('===== PERCENT COMPLETE: ' + str((completed_count * 100) / len(failed_recs)))
+
+    report_excel_columns = ['Date', 'Departs', 'Dep Time', 'Arrives', 'Arr Time', 'Stops', 'Flight']
+    for fare_type in fare_type_list:
+        report_excel_columns.append(fare_name_tmpl.format(fare_type))
+
+    update_excel(report_name, final_res, final_ero,
+                   report_excel_columns, ['route', 'date', 'exe'])
+
+    # write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, )
+
+    if send_email:
+        log.debug('Sending Mail to "{}"'.format(email_to_send_report))
+        send_mail(email_to_send_report, job_id, os.path.dirname(report_name))
+        log.info('Mail sent to "{}"'.format(email_to_send_report))
+
+    if os.path.exists('chrome-profile') and os.path.isdir('chrome-profile'):
+        shutil.rmtree('chrome-profile')
+
+
 if __name__ == '__main__':
     import logging
 
@@ -691,8 +807,9 @@ if __name__ == '__main__':
     rootlog = logging.getLogger('urllib3')
     rootlog.setLevel(logging.ERROR)
 
-    routes = ['SYD-CAN']  # , 'SYD-MEL'
-
-    run(routes, 3, 4)
+    # routes = ['SYD-CAN']  # , 'SYD-MEL'
+    #
+    # run(routes, 3, 4)
+    run_error(0)
 
     print("Completed")
