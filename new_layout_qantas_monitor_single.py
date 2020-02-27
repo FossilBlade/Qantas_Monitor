@@ -43,7 +43,8 @@ fare_type_list = ['red_e-deal', 'flex', 'business', 'business_classic_reward',
 
 fare_name_tmpl = '{} Fare'
 
-report_name_template ='db/{}/Qantas_Data_{}.xlsx'
+report_name_template = 'db/{}/Qantas_Data_{}.xlsx'
+
 
 def get_free_tcp_port():
     tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -227,132 +228,152 @@ class QantasScrapper:
             sleep(.5)
 
     def __process_displayed_months(self, day, mon_name, year):
-        tables = self.driver.find_elements_by_xpath(
-            '//div[@class="date-picker__calendar-container"]//table[@class="date-picker__calendar-table"]')
-        displayed_mon_nos = []
-        for table in tables:
-            input_mon_year = "{} {}".format(mon_name, year)
-            display_st = table.text.strip()
-            if input_mon_year in display_st:
+        rows = self.driver.find_elements_by_xpath(
+            '//div[@class="css-onbb9u-Calendar"]//div[@role="rowgroup"]')
+        for row in rows:
+            input_mon_year = "{}\n{}".format(mon_name, year).strip()
+            display_st = row.find_elements_by_tag_name('div')[0].text.strip()
 
-                display_day = table.find_element_by_xpath(
-                    './/span[@class="date-picker__calendar-weekdays-items-text" and text()="{}"]'.format(day))
 
-                self.driver.execute_script("arguments[0].click();", display_day)
-                return []
-            else:
-                dis_mon_ame = display_st[0].upper() + display_st[1:3].lower()
-                dis_month_number = datetime.datetime.strptime(dis_mon_ame, '%b').month
+            if input_mon_year == display_st:
 
-                displayed_mon_nos.append(dis_month_number)
+                weeks = row.find_elements_by_tag_name('div')
+                for week in weeks:
+                    try:
+                        display_day = week.find_element_by_xpath('.//button/div[text()="{}"]'.format(day))
+                    except:
+                        continue
+                # display_day = row.find_elements_by_tag_name('div')[1].find_element_by_xpath('.//button/div[text()="{}"]'.format(day))
+                display_day.click()
+                # sleep(.5)
+                # display_day.click()
 
-        return displayed_mon_nos
+                # display_day = row.find_element_by_xpath(
+                #     './/span[@class="date-picker__calendar-weekdays-items-text" and text()="{}"]'.format(day))
+
+                # self.driver.execute_script("arguments[0].click();", display_day)
+                return 0
+
+        return 1
+
+
 
     def __click_on_date(self):
 
         day = int(self.date.split("-")[0])
         mon_no = self.date.split("-")[1]
-        mon_name = datetime.date(1900, int(mon_no), 1).strftime('%B').upper()
+        mon_name = datetime.date(1900, int(mon_no), 1).strftime('%B')[0:3]
         year = int(self.date.split("-")[2])
 
-        date_picker = self.driver.find_element_by_xpath('//*[@id="datepicker-input-departureDate"]')
+        date_picker = self.driver.find_element_by_xpath('//div[@data-testid="travel-dates"]')
         date_picker.click()
-        sleep(.2)
 
-        displayed_mon_nos = self.__process_displayed_months(day, mon_name, year)
 
-        if len(displayed_mon_nos) == 2:
-            while len(displayed_mon_nos) != 0:
-                next_mon = self.driver.find_element_by_css_selector(
-                    '.date-picker__arrow.date-picker__arrow-right.qfa1-arrow-icon')
-                self.driver.execute_script("arguments[0].click();", next_mon)
-                displayed_mon_nos = self.__process_displayed_months(day, mon_name, year)
+        continue_scroll = self.__process_displayed_months(day, mon_name, year)
+
+        if continue_scroll == 1:
+            while continue_scroll != 0:
+                rows = self.driver.find_elements_by_xpath(
+                    '//div[@class="css-onbb9u-Calendar"]//div[@role="rowgroup"]')
+                self.driver.execute_script("arguments[0].scrollIntoView();", rows[-1])
+
+                continue_scroll = self.__process_displayed_months(day, mon_name, year)
                 sleep(.5)
+
+        confirm_btn = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, '//button[text()="Confirm"]')))
+
+        self.driver.execute_script("arguments[0].click();", confirm_btn)
+
 
     def __click_one_way(self):
 
         try:
-            oneway = self.driver.find_element_by_xpath('//*[@id="oneway"]')
+            type_btn = self.driver.find_element_by_xpath('//div[@data-testid="trip-type"]//button')
+            type_btn.click()
+            oneway = self.driver.find_element_by_xpath('//span[text()="One way"]')
             self.driver.execute_script("arguments[0].click();", oneway)
         except:
-            try:
-                old_form_link = self.driver.find_element_by_xpath(
-                    "//p[contains(text(),'still working through the accessibility functionality of this form')]//a")
+            raise Exception("Start page did not load properly. Can't find expected elements.")
 
-                self.log_debug('Different view Detected. Try to go to base view.')
-                self.driver.get(old_form_link.get_attribute('href'))
 
-                oneway = self.driver.find_element_by_xpath('//*[@id="oneway"]')
-                self.driver.execute_script("arguments[0].click();", oneway)
-            except:
-                raise Exception("Start page did not load properly. Can't find expected elements.")
+    def __enter_src_place_code(self):
 
-    def __enter_place_code(self, type):
+        place_code = self.route.split('-')[0]
+        self.log_debug('Entering SRC: ' + place_code)
 
-        clear_btns = WebDriverWait(self.driver, 5).until(
-            EC.visibility_of_all_elements_located((By.XPATH, '//div[@class="qfa1-typeahead__close-button"]')))
+        place_input_btn = WebDriverWait(self.driver, 5).until(
+            EC.visibility_of_element_located((By.XPATH, '//div[@data-testid="departure-port"]')))
 
-        if type == 'src':
-            place_code = self.route.split('-')[0]
-            self.log_debug('Entering SRC: ' + place_code)
 
-            self.driver.execute_script("arguments[0].click();", clear_btns[0])
+        for line in place_input_btn.text.strip().split('\n'):
+            if line.strip() == place_code:
+                return
 
-            place_input = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, '//input[@id="typeahead-input-from"]')))
+        place_input_btn.click()
 
-            self.send_keys(place_input, place_code,clear_btns[0])
+        place_input = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, '//div[@data-testid="departure-port"]//input')))
 
-            try:
-                place_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
-                (By.XPATH, '//*[@id="typeahead-list-item-from-list"]//strong[text()="{}"]'.format(place_code))))
-            except:
-                result_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
-                    (By.XPATH, '//*[@id="typeahead-list-item-from-list"]'.format(place_code))))
-                if "We can't find a matching location for" in result_opt.text:
-                    raise Exception('Invalid Code Used: ' + place_code)
-                else:
-                    raise
+        self.send_keys(place_input, place_code)
+
+        try:
+
+            place_opt = WebDriverWait(self.driver, 3).until(EC.element_to_be_clickable(
+                (By.XPATH, '//div[@data-testid="departure-port"]//ul//span[text()="{}"]'.format(place_code))))
+            place_opt.click()
+
+
+        except:
+            raise Exception('Invalid Code Used: ' + place_code)
+
+        # self.driver.find_element_by_xpath("//main").click()
+
+
+
+    def __enter_dst_place_code(self):
+
+        place_code = self.route.split('-')[-1]
+        self.log_debug('Entering DST: ' + place_code)
+
+        place_input_btn = WebDriverWait(self.driver, 5).until(
+            EC.visibility_of_element_located((By.XPATH, '//div[@data-testid="arrival-port"]')))
+
+        for line in place_input_btn.text.strip().split('\n'):
+            if line.strip() == place_code:
+                return
+
+        place_input_btn.click()
+
+        place_input = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, '//div[@data-testid="arrival-port"]//input')))
+
+        self.send_keys(place_input, place_code)
+
+        try:
+
+            place_opt = WebDriverWait(self.driver, 3).until(EC.element_to_be_clickable(
+                (By.XPATH, '//div[@data-testid="arrival-port"]//ul//span[text()="{}"]/..'.format(place_code))))
 
             place_opt.click()
 
-        elif type == "dst":
+        except:
 
-            place_code = self.route.split('-')[1]
-            self.log_debug('Entering DST: ' + place_code)
+            raise Exception('Invalid Code Used: ' + place_code)
 
-            self.driver.execute_script("arguments[0].click();", clear_btns[-1])
+        # self.driver.find_element_by_xpath("//html").click();
 
-            place_input = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, '//input[@id="typeahead-input-to"]')))
 
-            self.send_keys(place_input, place_code,clear_btns[-1])
 
-            try:
-                place_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
-                    (By.XPATH, '//*[@id="typeahead-list-item-to-list"]//strong[text()="{}"]'.format(place_code))))
-            except TimeoutException:
-                result_opt = WebDriverWait(self.driver, 2).until(EC.element_to_be_clickable(
-                    (By.XPATH, '//*[@id="typeahead-list-item-to-list"]'.format(place_code))))
-                if "We can't find a matching location for" in result_opt.text:
-                    raise Exception('Invalid Code Used: ' + place_code)
-                else:
-                    raise
-
-            place_opt.click()
-
-        else:
-            raise Exception('Incorrect Place Type')
-
-    def send_keys(self, elem, keys,clear_btn):
+    def send_keys(self, elem, keys):
         sleep(.1)
         for i in range(len(keys)):
             elem.send_keys(keys[i])
             sleep(.1)
 
         if elem.get_attribute('value') != keys:
-            # elem.clear()
-            self.driver.execute_script("arguments[0].click();", clear_btn)
+            elem.clear()
+            # self.driver.execute_script("arguments[0].click();", clear_btn)
             self.send_keys(elem, keys)
 
     def __click_search(self):
@@ -549,8 +570,8 @@ class QantasScrapper:
 
         self.__click_one_way()
 
-        self.__enter_place_code('src')
-        self.__enter_place_code('dst')
+        self.__enter_src_place_code()
+        self.__enter_dst_place_code()
 
         self.__click_on_date()
 
@@ -637,8 +658,9 @@ def is_job_running():
     else:
         return False
 
+
 def does_job_exists(job_id):
-    if os.path.exists('db/{}/Qantas_Data_{}.xlsx'.format(job_id, job_id)) :
+    if os.path.exists('db/{}/Qantas_Data_{}.xlsx'.format(job_id, job_id)):
         return True
     else:
         return False
@@ -713,7 +735,7 @@ def update_excel(excel_path, data_list, error_list, data_column_list, error_colu
         log.debug('Creating Data Sheet')
         new_data_df = pd.pandas.DataFrame.from_dict(data_list, dtype=str)
         try:
-            old_data_df = pd.read_excel(excel_path,sheet_name='Result')
+            old_data_df = pd.read_excel(excel_path, sheet_name='Result')
             result = pd.concat([old_data_df, new_data_df], ignore_index=True)
         except xlrd.biffh.XLRDError as e:
             if 'No sheet named' in str(e):
@@ -749,7 +771,7 @@ def read_failed_sheet(job_id):
 def run_error(job_id):
     job_id = str(job_id)
 
-    log.info("Retrying Job Id: "+ job_id)
+    log.info("Retrying Job Id: " + job_id)
 
     error_folder = 'db/{}/error'.format(job_id)
     report_name = report_name_template.format(job_id, job_id)
@@ -781,7 +803,7 @@ def run_error(job_id):
         report_excel_columns.append(fare_name_tmpl.format(fare_type))
 
     update_excel(report_name, final_res, final_ero,
-                   report_excel_columns, ['route', 'date', 'exe'])
+                 report_excel_columns, ['route', 'date', 'exe'])
 
     # write_to_excel(report_file_path_tmpl.format(job_id, error_rep_name), final_ero, )
 
@@ -807,9 +829,9 @@ if __name__ == '__main__':
     rootlog = logging.getLogger('urllib3')
     rootlog.setLevel(logging.ERROR)
 
-    routes = ['SYD-DEL']  # , 'SYD-MEL'
+    routes = ['SYD-DEL','MEL-SYD']  # , 'SYD-MEL'
 
-    run(routes, 3, 4)
+    run(routes, 6, 8)
     # run_error(0)
 
     print("Completed")
